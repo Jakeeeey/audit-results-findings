@@ -1,8 +1,8 @@
 /.github/ @Jakeeeey @ECuerdo
 
-/src/app/(human-resource-management)/hrm/_components/ @Jakeeeey @ECuerdo
+/src/app/(audit-results-findings)/arf/_components/ @Jakeeeey @ECuerdo
 
-/src/app/(human-resource-management)/layout.tsx @Jakeeeey @ECuerdo
+/src/app/(audit-results-findings)/layout.tsx @Jakeeeey @ECuerdo
 
 /src/app/api/auth/@Jakeeeey @ECuerdo
 
