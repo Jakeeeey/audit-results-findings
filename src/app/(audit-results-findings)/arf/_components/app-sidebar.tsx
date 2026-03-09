@@ -30,118 +30,22 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { is } from "date-fns/locale";
 
 const data = {
     navMain: [
         {
-            title: "Employee Admin",
+            title: "Asset Management",
             url: "#",
             icon: Users,
             isActive: false,
             items: [
                 {
-                    title: "Employee Master List",
-                    url: "/hrm/employee-admin/employee-master-list",
-                    icon: UserRound,
-                },
-                {
-                    title: "Administrator",
-                    url: "#",
-                    icon: Shield,
-                    items: [
-                        {
-                            title: "Department Schedule",
-                            url: "/hrm/employee-admin/administrator/department-schedule",
-                            icon: CalendarClock,
-                        },
-                        {
-                            title: "On Call",
-                            url: "/hrm/employee-admin/administrator/on-call",
-                            icon: CalendarClock,
-                        },
-                    ],
-                },
-                {
-                    title: "Structure",
-                    url: "#",
-                    icon: Network,
-                    items: [
-                        {
-                            title: "Division",
-                            url: "/hrm/employee-admin/structure/division",
-                            icon: Building2,
-                        },
-                        {
-                            title: "Salesman Management",
-                            url: "/hrm/employee-admin/structure/salesman-management/",
-                            icon: UserCog,
-                        },
-                        {
-                            title: "Company Profile",
-                            url: "/hrm/employee-admin/structure/company-profile",
-                            icon: Building,
-                        },
-                        {
-                            title: "Department",
-                            url: "/hrm/employee-admin/structure/department",
-                            icon: Layers,
-                        },
-                        {
-                            title: "Department Accounts",
-                            url: "/hrm/employee-admin/structure/department-accounts",
-                            icon: KeyRound,
-                        },
-                        {
-                            title: "Role Management",
-                            url: "/hrm/employee-admin/structure/role-management",
-                            icon: BadgeCheck,
-                        },
-                    ],
-                },
-                {
-                    title: "Approval",
-                    url: "#",
-                    icon: Shield,
-                    items: [
-                        {
-                            title: "Overtime Request",
-                            url: "/hrm/employee-admin/approval/overtime-request",
-                            icon: CalendarClock,
-                        },
-                    ],
-                },
-                {
-                    title: "Report",
-                    url: "#",
-                    icon: Shield,
-                    items: [
-                        {
-                            title: "Overtime Report",
-                            url: "/hrm/employee-admin/report/overtime-report",
-                            icon: CalendarClock,
-                        },
-                    ],
-                },
-            ],
-        },
-        {
-            title: "File Management",
-            url: "#",
-            icon: Users,
-            isActive: false,
-            items: [
-                {
-                    title: "Employee File Record Type",
-                    url: "/hrm/file-management/employee-file-record-type",
-                    icon: Shield,
-                },
-                {
-                    title: "Employee File Record List",
-                    url: "/hrm/file-management/employee-file-record-list",
+                    title: "Asset Audit",
+                    url: "/arf/asset-management/asset-audit",
                     icon: Shield,
                 },
             ],
-
         },
     ],
 };
