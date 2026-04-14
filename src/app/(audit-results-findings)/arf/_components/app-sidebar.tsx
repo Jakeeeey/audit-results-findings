@@ -4,17 +4,24 @@ import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
-    Users, // Employee Admin
-    UserRound, // Employee Master List
-    Shield, // Administrator
-    CalendarClock, // Admin > Department Schedule
-    Network, // Structure (replaces Sitemap)
-    Building2, // Division
-    UserCog, // Salesman
-    Building, // Company Profile
-    Layers, // Department
-    KeyRound, // Department Accounts
-    BadgeCheck, // Role Management
+    ShieldAlert,     // Remittance Audit
+    Banknote,        // Treasury Audits Group
+    Map,             // Field Verification Group
+    MapPin,          // Geo-Tagging Audits
+    Truck,           // Route Compliance
+    Tag,             // Pricing Violations
+    Settings,        // Settings Group
+    BookOpen,        // Findings Dictionary
+    UsersRound,      // Auditor Assignments
+    Package,         // Inventory Group
+    Boxes,           // Warehouse Stock
+    Wallet,          // Collections Group
+    HandCoins,       // Disbursements Group
+    ReceiptText,     // Expenses
+    FileSearch,      // Others / Miscellaneous
+    Radar,           // Tracing Group
+    ScanSearch,      // Product Trace
+    Waypoints        // Cross Trace
 } from "lucide-react";
 
 import { NavMain } from "./nav-main";
@@ -34,122 +41,134 @@ import {
 const data = {
     navMain: [
         {
-            title: "Employee Admin",
+            title: "Collection Audits",
             url: "#",
-            icon: Users,
-            isActive: false,
+            icon: Wallet,
+            isActive: true,
             items: [
                 {
-                    title: "Employee Master List",
-                    url: "/hrm/employee-admin/employee-master-list",
-                    icon: UserRound,
+                    title: "Remittance Ledger",
+                    url: "/arf/remittance-audit",
+                    icon: ShieldAlert,
                 },
                 {
-                    title: "Administrator",
-                    url: "#",
-                    icon: Shield,
-                    items: [
-                        {
-                            title: "Department Schedule",
-                            url: "/hrm/employee-admin/administrator/department-schedule",
-                            icon: CalendarClock,
-                        },
-                        {
-                            title: "On Call",
-                            url: "/hrm/employee-admin/administrator/on-call",
-                            icon: CalendarClock,
-                        },
-                    ],
-                },
-                {
-                    title: "Structure",
-                    url: "#",
-                    icon: Network,
-                    items: [
-                        {
-                            title: "Division",
-                            url: "/hrm/employee-admin/structure/division",
-                            icon: Building2,
-                        },
-                        {
-                            title: "Salesman Management",
-                            url: "/hrm/employee-admin/structure/salesman-management/",
-                            icon: UserCog,
-                        },
-                        {
-                            title: "Company Profile",
-                            url: "/hrm/employee-admin/structure/company-profile",
-                            icon: Building,
-                        },
-                        {
-                            title: "Department",
-                            url: "/hrm/employee-admin/structure/department",
-                            icon: Layers,
-                        },
-                        {
-                            title: "Department Accounts",
-                            url: "/hrm/employee-admin/structure/department-accounts",
-                            icon: KeyRound,
-                        },
-                        {
-                            title: "Role Management",
-                            url: "/hrm/employee-admin/structure/role-management",
-                            icon: BadgeCheck,
-                        },
-                    ],
-                },
-                {
-                    title: "Approval",
-                    url: "#",
-                    icon: Shield,
-                    items: [
-                        {
-                            title: "Overtime Request",
-                            url: "/hrm/employee-admin/approval/overtime-request",
-                            icon: CalendarClock,
-                        },
-                    ],
-                },
-                {
-                    title: "Report",
-                    url: "#",
-                    icon: Shield,
-                    items: [
-                        {
-                            title: "Overtime Report",
-                            url: "/hrm/employee-admin/report/overtime-report",
-                            icon: CalendarClock,
-                        },
-                    ],
+                    title: "Pricing & Credit",
+                    url: "/arf/pricing-violations",
+                    icon: Tag,
                 },
             ],
         },
         {
-            title: "File Management",
+            title: "Disbursement Audits",
             url: "#",
-            icon: Users,
+            icon: HandCoins,
             isActive: false,
             items: [
                 {
-                    title: "Employee File Record Type",
-                    url: "/hrm/file-management/employee-file-record-type",
-                    icon: Shield,
+                    title: "Petty Cash & Expenses",
+                    url: "/arf/petty-cash-audit",
+                    icon: ReceiptText,
                 },
                 {
-                    title: "Employee File Record List",
-                    url: "/hrm/file-management/employee-file-record-list",
-                    icon: Shield,
+                    title: "Supplier Payments",
+                    url: "/arf/supplier-audit",
+                    icon: Banknote,
                 },
             ],
-
+        },
+        {
+            title: "Inventory Audits",
+            url: "#",
+            icon: Package,
+            isActive: false,
+            items: [
+                {
+                    title: "Warehouse Discrepancies",
+                    url: "/arf/warehouse-audit",
+                    icon: Boxes,
+                },
+                {
+                    title: "Truck / Rolling Stock",
+                    url: "/arf/truck-inventory-audit",
+                    icon: Truck,
+                },
+            ],
+        },
+        {
+            title: "Field Verification",
+            url: "#",
+            icon: Map,
+            isActive: false,
+            items: [
+                {
+                    title: "Geo-Tagging & Store",
+                    url: "/arf/field-verification",
+                    icon: MapPin,
+                },
+                {
+                    title: "Route Compliance",
+                    url: "/arf/route-compliance",
+                    icon: Map,
+                },
+            ],
+        },
+        {
+            // 🚀 NEW: Forensic Tracing Module
+            title: "Forensic Tracing",
+            url: "#",
+            icon: Radar,
+            isActive: false,
+            items: [
+                {
+                    title: "Product Trace",
+                    url: "/arf/tracing/product-trace",
+                    icon: ScanSearch,
+                },
+                {
+                    title: "Cross Trace",
+                    url: "/arf/tracing/cross-trace",
+                    icon: Waypoints,
+                },
+            ],
+        },
+        {
+            title: "Other Findings",
+            url: "#",
+            icon: FileSearch,
+            isActive: false,
+            items: [
+                {
+                    title: "General Incidents",
+                    url: "/arf/general-incidents",
+                    icon: ShieldAlert,
+                },
+            ],
+        },
+        {
+            title: "Audit Settings",
+            url: "#",
+            icon: Settings,
+            isActive: false,
+            items: [
+                {
+                    title: "Findings Dictionary",
+                    url: "/arf/settings/findings-dictionary",
+                    icon: BookOpen,
+                },
+                {
+                    title: "Auditor Access",
+                    url: "/arf/settings/auditor-access",
+                    icon: UsersRound,
+                },
+            ],
         },
     ],
 };
 
 export function AppSidebar({
-    className,
-    ...props
-}: React.ComponentProps<typeof Sidebar>) {
+                               className,
+                               ...props
+                           }: React.ComponentProps<typeof Sidebar>) {
     return (
         <Sidebar
             {...props}
