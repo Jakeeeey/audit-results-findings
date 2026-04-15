@@ -45,16 +45,18 @@ export function isValidDate(val: unknown): val is Date {
  * Formatting helpers
  */
 export function formatCurrency(
-    amount: number,
+    amount: number | string | null | undefined,
     currency: string = "PHP",
     locale: string = "en-PH"
 ): string {
-  const safe = Number.isFinite(amount) ? amount : 0;
+  const value = typeof amount === 'string' ? parseFloat(amount) : (amount as number);
+  const safeValue = (value === null || value === undefined || isNaN(value) || !Number.isFinite(value)) ? 0 : value;
+
   return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     maximumFractionDigits: 2,
-  }).format(safe);
+  }).format(safeValue);
 }
 
 export function formatNumber(
