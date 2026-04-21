@@ -8,10 +8,11 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { NavUser } from "../../_components/nav-user";
+import { NavUser } from "@/components/shared/app-sidebar/nav-user"; // Adjust this relative path if your nav-user is located elsewhere!
 
 import { cookies } from "next/headers";
 
+// 🚀 Wire the brand new ARF module!
 import AssetAuditModule from "@/modules/audit-results-findings/asset-management/asset-audit/AssetAuditModule";
 
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 const COOKIE_NAME = "vos_access_token";
 
-function decodeJwtPayload(token: string): any | null {
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
     try {
         const parts = token.split(".");
         if (parts.length < 2) return null;
@@ -35,7 +36,7 @@ function decodeJwtPayload(token: string): any | null {
     }
 }
 
-function pickString(obj: any, keys: string[]): string {
+function pickString(obj: Record<string, unknown> | null, keys: string[]): string {
     for (const k of keys) {
         const v = obj?.[k];
         if (typeof v === "string" && v.trim()) return v.trim();
@@ -72,16 +73,16 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
 }
 
 export default async function Page() {
-    // ✅ Next.js 16: cookies() is async
+    // 🚀 Next.js 15+: cookies() is async
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
 
     const headerUser = buildHeaderUserFromToken(token);
 
     return (
-        // ✅ This fills the RIGHT column provided by SidebarInset (which is now fixed-height).
+        // 🚀 This fills the RIGHT column provided by SidebarInset (which is now fixed-height).
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {/* ✅ Topbar is fixed in place because ONLY <main> scrolls */}
+            {/* 🚀 Topbar is fixed in place because ONLY <main> scrolls */}
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
                     <SidebarTrigger className="-ml-1 shrink-0" />
@@ -101,7 +102,7 @@ export default async function Page() {
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
                                         Asset Audit
-                                    </BreadcrumbPage>
+                                    </BreadcrumbPage>                                  
                                 </BreadcrumbItem>
                             </BreadcrumbList>
                         </Breadcrumb>
@@ -113,11 +114,10 @@ export default async function Page() {
                 </div>
             </header>
 
-            {/* ✅ Only content scrolls inside RIGHT column */}
+            {/* 🚀 Only content scrolls inside RIGHT column */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
                 <AssetAuditModule />
             </main>
         </div>
-
     );
 }

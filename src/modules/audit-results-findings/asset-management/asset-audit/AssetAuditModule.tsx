@@ -36,7 +36,7 @@ export default function AssetAuditModule() {
             {/* Page heading */}
             <div>
                 <h1 className="text-xl font-semibold tracking-tight">
-                    Asset Inventory — Physical Audit
+                    Asset Audit
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
                     Scan assets using the BT RFID Reader to reveal and verify
