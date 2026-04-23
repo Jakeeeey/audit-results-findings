@@ -103,12 +103,12 @@ export function CrossTracingSummaryTable({
 
             // Only emit rows for Physical Inventory milestones
             if (isPH) {
-                const physInBase = Number(phys || 0) * effectiveUnitCount;
+                const varianceInBase = internalMovement;
                 const lastGroup = groups.length > 0 ? groups[groups.length - 1] : null;
                 
                 if (lastGroup && lastGroup.docNo === m.docNo) {
-                    // Same PH document across branches - aggregate the branch-specific physical count
-                    lastGroup.branchValues[m.branchId] = (lastGroup.branchValues[m.branchId] || 0) + physInBase;
+                    // Same PH document across branches - aggregate the branch-specific variance
+                    lastGroup.branchValues[m.branchId] = (lastGroup.branchValues[m.branchId] || 0) + varianceInBase;
                     lastGroup.total = cumulativeTotal; 
                     lastGroup.grossAmount = costPerUnit ? (cumulativeTotal / valuationDivisor) * costPerUnit : null;
                 } else {
@@ -117,7 +117,7 @@ export function CrossTracingSummaryTable({
                         date: m.ts,
                         docNo: m.docNo,
                         beginningBalance: beforeBalance,
-                        branchValues: { [m.branchId]: physInBase }, 
+                        branchValues: { [m.branchId]: varianceInBase }, 
                         total: cumulativeTotal,
                         grossAmount: costPerUnit ? (cumulativeTotal / valuationDivisor) * costPerUnit : null
                     });
@@ -298,22 +298,20 @@ export function CrossTracingSummaryTable({
                                         )}
                                     </TableCell>
                                     <TableCell className="py-5 text-center">
-                                        {row.isBeginning ? (
-                                            <div className="inline-flex items-center gap-1.5 bg-blue-500/5 text-blue-600 font-black text-xs px-3 py-1.5 rounded-xl border border-blue-500/10 shadow-sm shadow-blue-500/5">
-                                                {(row.beginningBalance / familyDivisor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
-                                                <ArrowUpRight className="h-3 w-3 opacity-60" />
-                                            </div>
-                                        ) : (
-                                            <span className="text-muted-foreground/20">—</span>
-                                        )}
+                                        <div className="inline-flex items-center gap-1.5 bg-blue-500/5 text-blue-600 font-black text-xs px-3 py-1.5 rounded-xl border border-blue-500/10 shadow-sm shadow-blue-500/5">
+                                            {(row.beginningBalance / familyDivisor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                                            <ArrowUpRight className="h-3 w-3 opacity-60" />
+                                        </div>
                                     </TableCell>
                                     {data.map(branch => {
                                         const val = row.branchValues[branch.branchId];
                                         return (
                                             <TableCell key={branch.branchId} className="py-5 text-center px-4">
                                                 {val !== undefined ? (
-                                                    <span className="text-sm font-black text-foreground tabular-nums drop-shadow-sm">
-                                                        {(val / familyDivisor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                                                    <span className={`text-sm font-black tabular-nums drop-shadow-sm transition-colors duration-200 ${
+                                                        val > 0 ? "text-emerald-600" : val < 0 ? "text-rose-600" : "text-foreground/40"
+                                                    }`}>
+                                                        {val > 0 ? "+" : ""}{(val / familyDivisor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                                                     </span>
                                                 ) : (
                                                     <span className="text-muted-foreground/10">—</span>
