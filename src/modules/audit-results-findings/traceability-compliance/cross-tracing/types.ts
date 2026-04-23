@@ -1,4 +1,4 @@
-import { ProductMovementRow, ProductFamilyRow } from "../product-tracing/types";
+import { ProductMovementRow, ProductFamilyRow, ConsolidationDispatchTraceRow } from "../product-tracing/types";
 
 export type CrossTracingFiltersType = {
     primary_branch_id: number | null;
@@ -17,4 +17,4 @@ export type BranchMovementData = {
     movements: ProductMovementRow[];
 };
 
-export { type ProductMovementRow, type ProductFamilyRow };
+export { type ProductMovementRow, type ProductFamilyRow, type ConsolidationDispatchTraceRow };

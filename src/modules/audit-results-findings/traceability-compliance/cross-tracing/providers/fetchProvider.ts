@@ -3,13 +3,15 @@ import {
     fetchBranches as fb,
     fetchProductFamilies as ff,
     fetchPhysicalInventories as fpi,
-    fetchFamilyRunningInventory as ffri
+    fetchFamilyRunningInventory as ffri,
+    fetchConsolidationDispatchTrace as fcdt
 } from "../../product-tracing/providers/fetchProvider";
 
 export const fetchBranches = fb;
 export const fetchProductFamilies = ff;
 export const fetchPhysicalInventories = fpi;
 export const fetchFamilyRunningInventory = ffri;
+export const fetchConsolidationDispatchTrace = fcdt;
 
 /**
  * Fetches available Units of Measure (UOM) for a product family.
