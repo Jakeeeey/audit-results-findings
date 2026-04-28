@@ -15,7 +15,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronRight, Calculator } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, Calculator, Loader2, ListIcon } from "lucide-react";
+import { ConsolidationDispatchTraceRow } from "../types";
+import { fetchConsolidationDispatchTrace } from "../providers/fetchProvider";
+import { toast } from "sonner";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from "@/components/ui/dialog";
 
 type Props = {
     data: BranchMovementData[];
@@ -48,6 +58,45 @@ export function CrossTracingTable({
 }: Props) {
     const [searchQuery, setSearchQuery] = React.useState("");
     const [isBBExpanded, setIsBBExpanded] = React.useState(false);
+    const [selectedConsolidationDoc, setSelectedConsolidationDoc] = React.useState<string | null>(null);
+    const [traceData, setTraceData] = React.useState<ConsolidationDispatchTraceRow[]>([]);
+    const [isTracing, setIsTracing] = React.useState(false);
+
+    const handleConsolidationClick = async (row: UnifiedMovementRow) => {
+        const docNo = row.docNo;
+        const docType = row.docType || "";
+        
+        const isConsolidation = /consolidation\s*dispatch/i.test(docType) || 
+                              /^(CLDTO|CD|PDP|DP)-/i.test(docNo || "");
+
+        if (!isConsolidation) return;
+
+        // Extract PDP number from description (descr) like "Picked for DPS - PDP-01116"
+        const protocolMatch = row.descr?.match(/(?:PDP|DP)-[A-Z0-9-]+/i);
+        const protocolNo = protocolMatch ? protocolMatch[0] : null;
+
+        // Extract potential Sales Order No from description
+        const soMatch = row.descr?.match(/(?!(?:PDP|DP)-)(?:[A-Z]{2,7})-?[0-9]{3,20}/i);
+        const orderNo = soMatch ? soMatch[0] : null;
+
+        const targetProductId = row.productId || row.parentId;
+        if (!targetProductId) {
+            toast.error("Could not trace: Product ID is missing for this movement.");
+            return;
+        }
+
+        setSelectedConsolidationDoc(docNo);
+        setIsTracing(true);
+        try {
+            const results = await fetchConsolidationDispatchTrace(targetProductId, docNo, protocolNo, orderNo, row.productName);
+            setTraceData(results);
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to fetch consolidation trace details.");
+        } finally {
+            setIsTracing(false);
+        }
+    };
 
     const unifiedData = React.useMemo(() => {
         if (data.length === 0) return [];
@@ -238,17 +287,49 @@ export function CrossTracingTable({
                                 </TableRow>
                             )}
 
-                            {unifiedData.map((row, i) => (
-                                <TableRow key={i} className="group hover:bg-primary/[0.01] transition-all duration-200 border-border/10">
-                                    <TableCell className="pl-8 py-5 font-bold text-sm text-foreground/80">
-                                        {row.docType || "Movement"}
-                                    </TableCell>
-                                    <TableCell className="py-5">
-                                        {row.docNo ? (
-                                            <span className="text-xs font-black font-mono text-primary/80 underline decoration-primary/20 underline-offset-4 cursor-pointer hover:text-primary transition-colors">
-                                                {row.docNo}
-                                            </span>
-                                        ) : (
+                            {unifiedData.map((row, i) => {
+                                const rowDocNo = row.docNo;
+                                const rowDocType = row.docType || "Movement";
+                                const isConsolidation = /consolidation\s*dispatch/i.test(rowDocType) || 
+                                                      /^(CLDTO|CD|PDP|DP)-/i.test(rowDocNo || "");
+
+                                return (
+                                    <TableRow 
+                                        key={i} 
+                                        className={cn(
+                                            "group transition-all duration-200 border-border/10",
+                                            isConsolidation ? "hover:bg-primary/5 cursor-pointer" : "hover:bg-primary/[0.01]"
+                                        )}
+                                        onClick={() => {
+                                            if (isConsolidation) {
+                                                handleConsolidationClick(row);
+                                            }
+                                        }}
+                                    >
+                                        <TableCell className="pl-8 py-5 font-bold text-sm text-foreground/80">
+                                            <div className="flex items-center gap-2">
+                                                {rowDocType}
+                                                {isConsolidation && <ListIcon className="h-3.5 w-3.5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="py-5">
+                                            {rowDocNo ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span 
+                                                        className={cn(
+                                                            "text-xs font-black font-mono underline-offset-4 transition-colors",
+                                                            isConsolidation 
+                                                                ? "text-primary underline decoration-primary/30 cursor-pointer hover:text-primary/70" 
+                                                                : "text-primary/80 decoration-primary/20"
+                                                        )}
+                                                    >
+                                                        {rowDocNo}
+                                                    </span>
+                                                    {isConsolidation && (
+                                                        <ListIcon className="h-3 w-3 text-primary opacity-50" />
+                                                    )}
+                                                </div>
+                                            ) : (
                                             <span className="text-muted-foreground/20 italic text-[10px]">—</span>
                                         )}
                                     </TableCell>
@@ -258,21 +339,27 @@ export function CrossTracingTable({
                                         </span>
                                     </TableCell>
                                     {data.map(branch => {
-                                        const movement = row.branchMovements?.[branch.branchId] || 0;
-                                        const val = movement / familyDivisor;
+                                        const movement = row.branchMovements?.[branch.branchId];
+                                        const isRelated = movement !== undefined;
+                                        const val = (movement || 0) / familyDivisor;
+
                                         return (
                                             <TableCell key={branch.branchId} className="py-5 text-center">
-                                                {val !== 0 ? (
-                                                    <Badge
-                                                        className={cn(
-                                                            "rounded-lg px-2.5 py-1 text-[11px] font-black border tracking-tight",
-                                                            val > 0
-                                                                ? "bg-emerald-500/5 text-emerald-600 border-emerald-500/10"
-                                                                : "bg-rose-500/5 text-rose-600 border-rose-500/10"
-                                                        )}
-                                                    >
-                                                        {val > 0 ? `+${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
-                                                    </Badge>
+                                                {isRelated ? (
+                                                    val !== 0 ? (
+                                                        <Badge
+                                                            className={cn(
+                                                                "rounded-lg px-2.5 py-1 text-[11px] font-black border tracking-tight",
+                                                                val > 0
+                                                                    ? "bg-emerald-500/5 text-emerald-600 border-emerald-500/10"
+                                                                    : "bg-rose-500/5 text-rose-600 border-rose-500/10"
+                                                            )}
+                                                        >
+                                                            {val > 0 ? `+${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                                                        </Badge>
+                                                    ) : (
+                                                        <span className="text-[10px] font-bold text-muted-foreground/40 tabular-nums uppercase tracking-widest">0.00</span>
+                                                    )
                                                 ) : (
                                                     <span className="text-muted-foreground/5 tabular-nums">—</span>
                                                 )}
@@ -288,7 +375,8 @@ export function CrossTracingTable({
                                             : "—"}
                                     </TableCell>
                                 </TableRow>
-                            ))}
+                                );
+                            })}
 
                             {/* Ending Balance Row */}
                             {unifiedData.length > 0 && (
@@ -328,6 +416,96 @@ export function CrossTracingTable({
                     </Table>
                 </div>
             </CardContent>
+
+            {/* Consolidation Dispatches Trace Dialog */}
+            <Dialog open={!!selectedConsolidationDoc} onOpenChange={(open) => !open && setSelectedConsolidationDoc(null)}>
+                <DialogContent className="sm:max-w-6xl w-full rounded-[2.5rem] border shadow-2xl p-0 overflow-hidden">
+                    <DialogHeader className="p-8 bg-primary/5 border-b">
+                        <DialogTitle className="flex items-center gap-3 text-xl font-bold">
+                            <div className="p-2.5 bg-primary/10 rounded-2xl">
+                                <ListIcon className="h-6 w-6 text-primary" />
+                            </div>
+                            Consolidation Dispatches Summary
+                        </DialogTitle>
+                        <DialogDescription className="font-mono mt-1 text-sm bg-background/50 px-3 py-1.5 rounded-lg inline-block w-fit border border-primary/10">
+                            Ref: {selectedConsolidationDoc}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="max-h-[60vh] overflow-y-auto min-h-[350px] flex flex-col">
+                        {isTracing ? (
+                            <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-4">
+                                <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                                <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest opacity-60">Tracing sales orders...</p>
+                            </div>
+                        ) : traceData.length === 0 ? (
+                            <div className="flex-1 flex flex-col items-center justify-center p-24 text-center space-y-4">
+                                <div className="h-16 w-16 bg-muted/20 rounded-full flex items-center justify-center">
+                                    <Search className="h-8 w-8 text-muted-foreground/30" />
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-lg font-black opacity-40 uppercase tracking-tight">No records found</p>
+                                    <p className="text-xs font-medium text-muted-foreground max-w-[280px] mx-auto opacity-60">No related invoice details were found for this product in the consolidation flow.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <Table>
+                                <TableHeader className="bg-muted/20 sticky top-0 backdrop-blur-md z-10">
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest pl-10 py-5 text-muted-foreground/50">Sales Invoice</TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest py-5 text-muted-foreground/50">Customer Name</TableHead>
+                                        <TableHead className="text-right text-[10px] font-black uppercase tracking-widest py-5 text-muted-foreground/50">Quantity</TableHead>
+                                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-5 text-muted-foreground/50">UOM</TableHead>
+                                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-5 text-muted-foreground/50">Status</TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest pr-10 py-5 text-muted-foreground/50">Remarks</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {traceData.map((row, i) => (
+                                        <TableRow key={i} className="hover:bg-muted/50 border-muted/50 transition-colors group">
+                                            <TableCell className="text-xs font-black py-5 pl-10 font-mono text-primary/80" title={row.sales_invoice}>
+                                                {row.sales_invoice}
+                                            </TableCell>
+                                            <TableCell className="text-sm font-bold py-5 text-foreground/70">
+                                                {row.customer_name}
+                                            </TableCell>
+                                            <TableCell className="text-right text-base font-black py-5 tabular-nums tracking-tighter">
+                                                {(row.quantity ?? 0).toLocaleString()}
+                                            </TableCell>
+                                            <TableCell className="text-center py-5">
+                                                <Badge variant="outline" className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg bg-muted/10 border-muted-foreground/10">
+                                                    {row.uom}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-center py-5">
+                                                <Badge className={cn(
+                                                    "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border shadow-sm",
+                                                    row.order_status === "Remitted" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" :
+                                                        row.order_status === "Dispatched" ? "bg-blue-500/10 text-blue-600 border-blue-500/20" :
+                                                            row.order_status === "Posted" ? "bg-orange-500/10 text-orange-600 border-orange-500/20" :
+                                                                row.order_status === "Receipt" ? "bg-purple-500/10 text-purple-600 border-purple-500/20" :
+                                                                    "bg-muted text-muted-foreground font-medium"
+                                                )}>
+                                                    {row.order_status}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-xs italic text-muted-foreground/60 py-5 pr-10 max-w-[150px] truncate" title={row.remarks || ""}>
+                                                {row.remarks || "—"}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </div>
+
+                    <div className="p-6 bg-muted/30 border-t flex justify-end">
+                        <Badge variant="outline" className="px-4 py-1.5 font-black text-[11px] uppercase tracking-widest rounded-xl bg-background border-primary/10 text-primary/60">
+                            Total Records Found: {traceData.length}
+                        </Badge>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </Card>
     );
 }
