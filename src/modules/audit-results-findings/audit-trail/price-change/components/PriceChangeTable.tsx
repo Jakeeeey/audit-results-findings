@@ -45,6 +45,7 @@ interface Props {
     totalCount: number;
     pageSize: number;
     onPageChange: (page: number) => void;
+    onRowClick: (row: PriceChangeRow) => void;
 }
 
 // ─── Skeleton row ──────────────────────────────────────────────────────────────
@@ -99,6 +100,7 @@ export function PriceChangeTable({
     totalCount,
     pageSize,
     onPageChange,
+    onRowClick,
 }: Props) {
     const startItem = (page - 1) * pageSize + 1;
     const endItem = Math.min(page * pageSize, totalCount);
@@ -176,7 +178,8 @@ export function PriceChangeTable({
                                     return (
                                         <TableRow
                                             key={`${row.id}-${idx}`}
-                                            className="hover:bg-muted/30 transition-colors"
+                                            className="hover:bg-primary/5 hover:shadow-[inset_2px_0_0_0_hsl(var(--primary))] transition-all cursor-pointer group"
+                                            onClick={() => onRowClick(row)}
                                         >
                                             {/* No. */}
                                             <TableCell className="px-3 py-2.5 text-[11px] font-bold text-muted-foreground tabular-nums w-12">

@@ -7,6 +7,7 @@
  * Composes the filter bar + table, wires the hook, owns page-level layout.
  */
 
+import { useState } from "react";
 import { RefreshCcw, Tag } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { usePriceChange } from "./hooks/usePriceChange";
 import { PriceChangeFilters } from "./components/PriceChangeFilters";
 import { PriceChangeTable } from "./components/PriceChangeTable";
+import { PriceChangeViewDialog } from "./components/PriceChangeViewDialog";
+import type { PriceChangeRow } from "./types";
 
 export default function PriceChangeModule() {
     const {
@@ -29,6 +32,15 @@ export default function PriceChangeModule() {
         setPage,
         refresh,
     } = usePriceChange();
+
+    // ── Dialog state ────────────────────────────────────────────────────────
+    const [selectedRow, setSelectedRow] = useState<PriceChangeRow | null>(null);
+    const [dialogOpen, setDialogOpen] = useState(false);
+
+    function handleRowClick(row: PriceChangeRow) {
+        setSelectedRow(row);
+        setDialogOpen(true);
+    }
 
     return (
         <div className="w-full flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -81,8 +93,16 @@ export default function PriceChangeModule() {
                     totalCount={totalCount}
                     pageSize={pageSize}
                     onPageChange={setPage}
+                    onRowClick={handleRowClick}
                 />
             </Card>
+
+            {/* ── View dialog ────────────────────────────────────────────── */}
+            <PriceChangeViewDialog
+                row={selectedRow}
+                open={dialogOpen}
+                onOpenChange={setDialogOpen}
+            />
         </div>
     );
 }
