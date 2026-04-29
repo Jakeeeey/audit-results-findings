@@ -8,9 +8,11 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { NavUser } from "@/components/shared/app-sidebar/nav-user"; // Adjust this relative path if your nav-user is located elsewhere!
+import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
+
+// âœ… Wire the module you asked for
 import CustomerDiscountModule from "@/modules/audit-results-findings/audit-trail/customer-discount/CustomerDiscountModule";
 
 export const runtime = "nodejs";
@@ -18,9 +20,7 @@ export const dynamic = "force-dynamic";
 
 const COOKIE_NAME = "vos_access_token";
 
-type JwtPayload = Record<string, unknown>;
-
-function decodeJwtPayload(token: string): JwtPayload | null {
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
     try {
         const parts = token.split(".");
         if (parts.length < 2) return null;
@@ -30,22 +30,17 @@ function decodeJwtPayload(token: string): JwtPayload | null {
         const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
 
         const json = Buffer.from(padded, "base64").toString("utf8");
-        return JSON.parse(json) as JwtPayload;
+        return JSON.parse(json);
     } catch {
         return null;
     }
 }
 
-function pickString(obj: JwtPayload | null, keys: string[]): string {
-    if (!obj) return "";
-
+function pickString(obj: Record<string, unknown> | null | undefined, keys: string[]): string {
     for (const k of keys) {
-        const value = obj[k];
-        if (typeof value === "string" && value.trim()) {
-            return value.trim();
-        }
+        const v = obj ? obj[k] : undefined;
+        if (typeof v === "string" && v.trim()) return v.trim();
     }
-
     return "";
 }
 
@@ -78,52 +73,57 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
 }
 
 export default async function Page() {
+    // âœ… Next.js 16: cookies() is async
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
 
     const headerUser = buildHeaderUserFromToken(token);
-    const payload = token ? decodeJwtPayload(token) : null;
-    const userId = payload?.sub ? Number(payload.sub) : null;
-    const currentUser = userId ? { id: userId, name: headerUser.name } : null;
 
     return (
+        // âœ… This fills the RIGHT column provided by SidebarInset (which is now fixed-height).
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <header className="relative z-10 flex h-14 shrink-0 items-center justify-between overflow-hidden border-b bg-background shadow-sm sm:h-16">
-                <div className="flex h-full min-w-0 items-center gap-2 overflow-hidden px-3 sm:px-4">
+            {/* âœ… Topbar is fixed in place because ONLY <main> scrolls */}
+            <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
+                <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
                     <SidebarTrigger className="-ml-1 shrink-0" />
 
                     <Separator
                         orientation="vertical"
-                        className="mr-2 hidden shrink-0 data-[orientation=vertical]:h-4 sm:block"
+                        className="hidden sm:block mr-2 data-[orientation=vertical]:h-4 shrink-0"
                     />
 
                     <div className="min-w-0 overflow-hidden">
                         <Breadcrumb>
-                            <BreadcrumbList>
-
-                                <BreadcrumbItem className="hidden md:block">
-                                    <BreadcrumbLink href="#">
-                                        Audit Trail
-                                    </BreadcrumbLink>
+                            <BreadcrumbList className="min-w-0 overflow-hidden">
+                                <BreadcrumbItem className="hidden md:block shrink-0">
+                                    <BreadcrumbLink href="#">ARF</BreadcrumbLink>
                                 </BreadcrumbItem>
-                                <BreadcrumbSeparator className="hidden md:block" />
-                                <BreadcrumbItem>
-                                    <BreadcrumbPage>Customer Discount</BreadcrumbPage>
+                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                                <BreadcrumbItem className="min-w-0 overflow-hidden">
+                                    <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
+                                        Audit Trail
+                                    </BreadcrumbPage>
+                                </BreadcrumbItem>
+                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                                <BreadcrumbItem className="min-w-0 overflow-hidden">
+                                    <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
+                                        Customer Discount
+                                    </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
                         </Breadcrumb>
                     </div>
                 </div>
 
-                <div className="flex h-full max-w-[48vw] shrink-0 items-center overflow-hidden px-2 sm:max-w-none sm:px-4">
+                <div className="flex h-full items-center px-2 sm:px-4 shrink-0 max-w-[48vw] sm:max-w-none overflow-hidden">
                     <NavUser user={headerUser} />
                 </div>
             </header>
 
+            {/* âœ… Only content scrolls inside RIGHT column */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
                 <CustomerDiscountModule />
             </main>
         </div>
     );
 }
-
