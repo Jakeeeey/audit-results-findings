@@ -9,7 +9,7 @@
  */
 
 import { useId } from "react";
-import { CalendarIcon, RotateCcw, Search } from "lucide-react";
+import { CalendarIcon, Loader2, RotateCcw, Search } from "lucide-react";
 import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
@@ -125,18 +125,21 @@ export function CustomerDiscountFilters({
                         htmlFor={`${uid}-search`}
                         className="text-[11px] font-black uppercase tracking-widest text-muted-foreground"
                     >
-                        Search (Changed By)
+                        Search
                     </Label>
                     <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground opacity-60 pointer-events-none" />
+                        {loading ? (
+                            <Loader2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground animate-spin pointer-events-none" />
+                        ) : (
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground opacity-60 pointer-events-none" />
+                        )}
                         <Input
                             id={`${uid}-search`}
-                            placeholder="e.g. Juan dela Cruz"
+                            placeholder="Customer name, store, category, changed by…"
                             value={filters.search}
                             onChange={(e) =>
                                 onFilterChange("search", e.target.value)
                             }
-                            disabled={loading}
                             className="pl-8 h-9 text-xs font-semibold bg-background"
                         />
                     </div>

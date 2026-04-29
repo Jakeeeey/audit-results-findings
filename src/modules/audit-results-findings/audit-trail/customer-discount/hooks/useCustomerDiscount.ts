@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 import type { CustomerDiscountFilters, CustomerDiscountRow } from "../types";
 import { fetchCustomerDiscountLogs } from "../providers/fetchProviders";
-import { buildDefaultFilters } from "../utils/customerDiscountUtils";
+import { buildDefaultFilters, rowMatchesSearch } from "../utils/customerDiscountUtils";
 
 const PAGE_SIZE = 15;
 
@@ -84,10 +84,16 @@ export function useCustomerDiscount() {
     }, []);
 
     // ── Pagination helpers ──────────────────────────────────────────────────
-    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    // Apply client-side search across customerName, storeName, categoryName,
+    // changedBy, and all other text fields via rowMatchesSearch
+    const filteredRows = filters.search?.trim()
+        ? rows.filter((r) => rowMatchesSearch(r, filters.search))
+        : rows;
+
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
     const safePage = Math.min(page, totalPages);
 
-    const paginatedRows = rows.slice(
+    const paginatedRows = filteredRows.slice(
         (safePage - 1) * PAGE_SIZE,
         safePage * PAGE_SIZE,
     );
@@ -106,7 +112,7 @@ export function useCustomerDiscount() {
         // pagination
         page: safePage,
         totalPages,
-        totalCount: rows.length,
+        totalCount: filteredRows.length,
         pageSize: PAGE_SIZE,
         setPage,
 

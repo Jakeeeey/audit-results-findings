@@ -20,8 +20,8 @@ function buildFilterUrl(filters: CustomerDiscountFilters): string {
 
     if (filters.startDate) params.set("startDate", filters.startDate);
     if (filters.endDate) params.set("endDate", filters.endDate);
-    // The API param is "changedByName"; we map our generic "search" to it
-    if (filters.search.trim()) params.set("changedByName", filters.search.trim());
+    // NOTE: search is applied client-side across multiple fields;
+    // we do NOT send it to the API to avoid single-field server restriction.
 
     const qs = params.toString();
     return qs ? `${API_ENDPOINT}?${qs}` : API_ENDPOINT;
@@ -44,7 +44,7 @@ function mapRow(raw: any, index: number): CustomerDiscountRow {
         supplierName: raw.supplierName ?? raw.supplier_name ?? null,
         categoryName: raw.categoryName ?? raw.category_name ?? null,
 
-        discountType: raw.discountType ?? raw.discount_type ?? null,
+        discountType: raw.discountTypeName ?? raw.discountType ?? raw.discount_type ?? null,
 
         changedBy: raw.changedByName ?? raw.changedBy ?? raw.changed_by ?? null,
         date: raw.date ?? raw.changedAt ?? raw.changed_at ?? raw.createdAt ?? null,
