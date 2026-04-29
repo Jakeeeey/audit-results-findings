@@ -9,12 +9,12 @@
  *  • Exposes a clean API back to PriceChangeModule
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { toast } from "sonner";
 
 import type { PriceChangeFilters, PriceChangeRow } from "../types";
 import { fetchPriceChangeRequests } from "../providers/fetchproviders";
-import { buildDefaultFilters } from "../utils/priceChangeUtils";
+import { buildDefaultFilters, rowMatchesSearch } from "../utils/priceChangeUtils";
 
 const PAGE_SIZE = 15;
 
@@ -51,7 +51,8 @@ export function usePriceChange() {
         }
     }, []);
 
-    // ── Auto-fetch when filters change (debounce search field only) ──────────
+    // ── Auto-fetch only when API-backed filters change ───────────────────────
+    // search is handled client-side — no re-fetch needed for it
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
@@ -67,7 +68,6 @@ export function usePriceChange() {
         filters.endDate,
         filters.status,
         filters.priceTypeName,
-        filters.search,
     ]);
 
     // ── Filter setters (granular, keep existing shape) ──────────────────────
@@ -85,14 +85,26 @@ export function usePriceChange() {
         setFilters(buildDefaultFilters());
     }, []);
 
+    // ── Client-side search filter ─────────────────────────────────────────────
+    // Runs instantly on every keystroke — no network call
+    const filteredRows = useMemo(() => {
+        if (!filters.search.trim()) return rows;
+        return rows.filter((r) => rowMatchesSearch(r, filters.search));
+    }, [rows, filters.search]);
+
     // ── Pagination helpers ──────────────────────────────────────────────────
-    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
     const safePage = Math.min(page, totalPages);
 
-    const paginatedRows = rows.slice(
+    const paginatedRows = filteredRows.slice(
         (safePage - 1) * PAGE_SIZE,
         safePage * PAGE_SIZE,
     );
+
+    // Reset to page 1 when search changes
+    useEffect(() => {
+        setPage(1);
+    }, [filters.search]);
 
     return {
         // data
@@ -108,7 +120,7 @@ export function usePriceChange() {
         // pagination
         page: safePage,
         totalPages,
-        totalCount: rows.length,
+        totalCount: filteredRows.length,
         pageSize: PAGE_SIZE,
         setPage,
 

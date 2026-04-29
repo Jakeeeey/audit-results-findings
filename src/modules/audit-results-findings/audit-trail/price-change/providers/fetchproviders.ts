@@ -22,8 +22,8 @@ function buildFilterUrl(filters: PriceChangeFilters): string {
     if (filters.endDate) params.set("endDate", filters.endDate);
     if (filters.status) params.set("status", filters.status);
     if (filters.priceTypeName) params.set("priceTypeName", filters.priceTypeName);
-    // The API param is "requestedBy"; we map our generic "search" to it
-    if (filters.search.trim()) params.set("requestedBy", filters.search.trim());
+    // NOTE: search is applied client-side across brand, productName,
+    //       supplierName, and requestedBy — not sent to the API.
 
     const qs = params.toString();
     return qs ? `${API_ENDPOINT}?${qs}` : API_ENDPOINT;
