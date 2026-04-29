@@ -32,7 +32,7 @@ function str(v: unknown): string | null {
     return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
-export async function fetchAssetsForAudit(_token: string): Promise<AssetAuditItem[]> {
+export async function fetchAssetsForAudit(): Promise<AssetAuditItem[]> {
     if (!DIRECTUS_BASE_URL) throw new Error("NEXT_PUBLIC_API_BASE_URL not set");
     if (!DIRECTUS_TOKEN)    throw new Error("DIRECTUS_STATIC_TOKEN not set");
 
