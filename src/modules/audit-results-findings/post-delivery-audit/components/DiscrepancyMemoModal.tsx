@@ -61,6 +61,7 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
   const [displayCustomer, setDisplayCustomer] = useState<string>("---");
   const [displaySupplier, setDisplaySupplier] = useState<string>("---");
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [selectedSRAmount, setSelectedSRAmount] = useState<number>(0);
 
   const loadData = React.useCallback(async () => {
     setLoading(true);
@@ -140,9 +141,8 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
   };
 
   const handleSelectSR = (sr: SalesReturnRecord & { supplier_id?: { id: number } | number }) => {
-    const supplier = data?.resolvedSupplier;
-    const supplierName = supplier?.supplier_name || "N/A";
-    const supplierId = supplier?.id || (typeof sr.supplier_id === 'object' ? sr.supplier_id?.id : sr.supplier_id);
+    const supplierId = (typeof sr.supplier_id === 'object' ? sr.supplier_id?.id : sr.supplier_id) || data?.resolvedSupplier?.id;
+    const supplierName = data?.suppliers.find(s => s.id === supplierId)?.supplier_name || data?.resolvedSupplier?.supplier_name || "N/A";
     
     const resolvedMemoNo = data?.existingMemo?.memo_number || data?.generatedMemoNo || "";
     
@@ -150,16 +150,17 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
       ...formData,
       memoNumber: resolvedMemoNo, 
       supplierId: supplierId?.toString() || formData.supplierId,
+      amount: sr.total_amount?.toString() || "0"
     });
     
     const custName = data?.customer?.customer_name || "N/A";
     setDisplayCustomer(custName);
     setDisplaySupplier(supplierName);
+    setSelectedSRAmount(Number(sr.total_amount) || 0);
     
     toast.info(`Populated from ${sr.return_number}`);
   };
 
-  const totalSRAmount = data?.salesReturns.reduce((acc: number, curr: SalesReturnRecord) => acc + (Number(curr.total_amount) || 0), 0) || 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -243,7 +244,7 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
 
                   <div className="space-y-2">
                     <Label className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">
-                      Amount of SR - <span className="text-emerald-600">₱{totalSRAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      Amount of SR - <span className="text-emerald-600">₱{selectedSRAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </Label>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground opacity-30">₱</span>
@@ -253,9 +254,9 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
                         onChange={(e) => {
                           const input = e.target.value;
                           const val = Number(input);
-                          if (val > totalSRAmount) {
-                            setFormData({ ...formData, amount: totalSRAmount.toString() });
-                            toast.warning(`Amount cannot exceed the total Return value (₱${totalSRAmount.toLocaleString()})`);
+                          if (val > selectedSRAmount && selectedSRAmount > 0) {
+                            setFormData({ ...formData, amount: selectedSRAmount.toString() });
+                            toast.warning(`Amount cannot exceed the selected Return value (₱${selectedSRAmount.toLocaleString()})`);
                           } else if (val < 0) {
                             setFormData({ ...formData, amount: "0" });
                           } else {
