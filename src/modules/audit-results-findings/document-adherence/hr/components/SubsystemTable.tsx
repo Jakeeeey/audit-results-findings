@@ -9,6 +9,12 @@ import {
   TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Pagination, PaginationContent, PaginationItem,
   PaginationLink, PaginationPrevious, PaginationNext,
   PaginationEllipsis,
@@ -17,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { AdherenceBadge } from '../../master-list/components/StatusBadge';
 import { AdherenceRemarksDialog } from '../../master-list/components/AdherenceRemarksDialog';
 import { NTEConfirmationDialog } from '../../master-list/components/NTEConfirmationDialog';
-import { MessageSquare, Loader2 } from 'lucide-react';
+import { MessageSquare, Loader2, ChevronsUpDown, ChevronUp, ChevronDown, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { SubsystemTableRow } from '../types';
 
@@ -51,6 +57,20 @@ export function SubsystemTable({ rows, loading, search, isUserFilterActive, onSu
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [isCreatingNTE, setIsCreatingNTE] = useState(false);
   const [isNTEConfirmOpen, setIsNTEConfirmOpen] = useState(false);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof SubsystemTableRow; direction: 'asc' | 'desc' } | null>(null);
+
+
+  const HEADER_MAP: Record<string, keyof SubsystemTableRow> = {
+    'Doc Type':         'docType',
+    'Doc No.':          'docNo',
+    'Prepared By':      'preparedBy',
+    'Date Created':     'rawDate',
+    'Updated Date':     'updatedDate',
+    'Days Elapsed':     'daysElapsed',
+    'Adherence Status': 'adherenceStatus',
+    'Document Status':  'documentStatus',
+    'NTE No.':          'nteNo',
+  };
 
   const handleViewRemarks = (docType: string, docNo: string) => {
     setSelectedRow({ docType, docNo });
@@ -58,16 +78,37 @@ export function SubsystemTable({ rows, loading, search, isUserFilterActive, onSu
   };
 
   const filteredRows = useMemo(() => {
-    if (!search.trim()) return rows;
-    const q = search.toLowerCase();
-    return rows.filter(r =>
-      r.docNo.toLowerCase().includes(q)           ||
-      r.docType.toLowerCase().includes(q)         ||
-      r.preparedBy.toLowerCase().includes(q)      ||
-      r.adherenceStatus.toLowerCase().includes(q) ||
-      r.documentStatus.toLowerCase().includes(q)
-    );
-  }, [rows, search]);
+    let items = [...rows];
+    
+    // Search
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      items = items.filter(r =>
+        r.docNo.toLowerCase().includes(q)           ||
+        r.docType.toLowerCase().includes(q)         ||
+        r.preparedBy.toLowerCase().includes(q)      ||
+        r.adherenceStatus.toLowerCase().includes(q) ||
+        r.documentStatus.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    if (sortConfig) {
+      items.sort((a, b) => {
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+        
+        if (aVal === null || aVal === undefined) return 1;
+        if (bVal === null || bVal === undefined) return -1;
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return items;
+  }, [rows, search, sortConfig]);
 
   useEffect(() => { 
     setCurrentPage(1); 
@@ -155,13 +196,65 @@ export function SubsystemTable({ rows, loading, search, isUserFilterActive, onSu
                 <TableHead
                   key={h}
                   className={cn(
-                    'text-xs font-bold py-4',
-                    idx === 0 && 'pl-6',
-                    idx === HEADERS.length - 1 && 'pr-6 text-right',
-                    h === 'Days Elapsed' && 'text-right',
+                    'text-[11px] font-bold py-3 select-none p-0 whitespace-nowrap',
+                    idx === 0 && 'pl-4',
+                    idx === HEADERS.length - 1 && 'pr-4 text-right',
                   )}
                 >
-                  {h}
+                  {HEADER_MAP[h] ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <div className={cn(
+                          "flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors px-2 py-3 h-full whitespace-nowrap",
+                          (h === 'Days Elapsed' || idx === HEADERS.length - 1) && "justify-end"
+                        )}>
+                          {h}
+                          <span className="shrink-0 opacity-50">
+                            {sortConfig?.key === HEADER_MAP[h] ? (
+                              sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3 text-primary" /> : <ChevronDown className="h-3 w-3 text-primary" />
+                            ) : (
+                              <ChevronsUpDown className="h-3 w-3" />
+                            )}
+                          </span>
+                        </div>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align={idx === HEADERS.length - 1 ? "end" : "start"} className="min-w-[110px]">
+                        <DropdownMenuItem onClick={() => setSortConfig({ key: HEADER_MAP[h], direction: 'asc' })}>
+                          <div className="flex items-center gap-2 w-full">
+                            <div className="w-4 flex justify-center shrink-0">
+                              {sortConfig?.key === HEADER_MAP[h] && sortConfig.direction === 'asc' && <Check className="h-3.5 w-3.5" />}
+                            </div>
+                            <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="text-xs">Asc</span>
+                          </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setSortConfig({ key: HEADER_MAP[h], direction: 'desc' })}>
+                          <div className="flex items-center gap-2 w-full">
+                            <div className="w-4 flex justify-center shrink-0">
+                              {sortConfig?.key === HEADER_MAP[h] && sortConfig.direction === 'desc' && <Check className="h-3.5 w-3.5" />}
+                            </div>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="text-xs">Desc</span>
+                          </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setSortConfig(null)}>
+                          <div className="flex items-center gap-2 w-full">
+                            <div className="w-4 flex justify-center shrink-0">
+                              <X className="h-3.5 w-3.5 text-muted-foreground" />
+                            </div>
+                            <span className="text-xs">Reset</span>
+                          </div>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <div className={cn(
+                      "px-2 py-3",
+                      (h === 'Days Elapsed' || idx === HEADERS.length - 1) && "text-right"
+                    )}>
+                      {h}
+                    </div>
+                  )}
                 </TableHead>
               ))}
             </TableRow>
@@ -183,7 +276,7 @@ export function SubsystemTable({ rows, loading, search, isUserFilterActive, onSu
             ) : paginatedRows.map(row => (
               <TableRow key={row.id} className="border-border/40 hover:bg-muted/20">
                 {isUserFilterActive && (
-                  <TableCell className="text-center pl-6">
+                  <TableCell className="text-center pl-4">
                     <Checkbox 
                       checked={selectedRowIds.has(row.id)}
                       disabled={!!row.nteNo}
@@ -196,16 +289,16 @@ export function SubsystemTable({ rows, loading, search, isUserFilterActive, onSu
                     />
                   </TableCell>
                 )}
-                <TableCell className="text-xs font-medium py-4 pl-6">{row.docType}</TableCell>
-                <TableCell className="text-xs text-primary font-bold font-mono py-4 max-w-[150px] truncate" title={row.docNo}>{row.docNo}</TableCell>
-                <TableCell className="text-xs py-4 max-w-[180px] truncate" title={row.preparedBy}>{row.preparedBy}</TableCell>
-                <TableCell className="text-xs text-muted-foreground py-4">{row.dateCreated}</TableCell>
-                <TableCell className="text-xs text-muted-foreground py-4">{row.updatedDate}</TableCell>
-                <TableCell className="text-xs py-4 text-right font-medium">{row.daysElapsed}d</TableCell>
-                <TableCell className="text-xs py-4"><AdherenceBadge status={row.adherenceStatus} /></TableCell>
-                <TableCell className="text-xs py-4">{row.documentStatus}</TableCell>
-                <TableCell className="text-xs py-4 font-mono text-muted-foreground">{row.nteNo || '—'}</TableCell>
-                <TableCell className="text-xs py-4 pr-6 text-right">
+                <TableCell className="text-[10px] font-medium py-3 pl-4">{row.docType}</TableCell>
+                <TableCell className="text-[10px] text-primary font-bold font-mono py-3 max-w-[120px] truncate" title={row.docNo}>{row.docNo}</TableCell>
+                <TableCell className="text-[10px] py-3 max-w-[150px] truncate" title={row.preparedBy}>{row.preparedBy}</TableCell>
+                <TableCell className="text-[10px] text-muted-foreground py-3">{row.dateCreated}</TableCell>
+                <TableCell className="text-[10px] text-muted-foreground py-3">{row.updatedDate}</TableCell>
+                <TableCell className="text-[10px] py-3 text-right font-medium">{row.daysElapsed}d</TableCell>
+                <TableCell className="text-[10px] py-3"><AdherenceBadge status={row.adherenceStatus} /></TableCell>
+                <TableCell className="text-[10px] py-3">{row.documentStatus}</TableCell>
+                <TableCell className="text-[10px] py-3 font-mono text-muted-foreground">{row.nteNo || '—'}</TableCell>
+                <TableCell className="text-[10px] py-3 pr-4 text-right">
                   <Button 
                     variant="ghost" 
                     size="icon" 
@@ -213,13 +306,7 @@ export function SubsystemTable({ rows, loading, search, isUserFilterActive, onSu
                     onClick={() => handleViewRemarks(row.docType, row.docNo)} 
                     title="View Remarks"
                   >
-                    <MessageSquare className={cn("h-4 w-4", row.hasRemarks && "text-primary")} />
-                    {row.hasRemarks && (
-                      <span className="absolute top-1 right-1 flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                      </span>
-                    )}
+                    <MessageSquare className={cn("h-4 w-4", row.hasRemarks && "text-red-500")} />
                   </Button>
                 </TableCell>
               </TableRow>
@@ -290,12 +377,10 @@ export function SubsystemTable({ rows, loading, search, isUserFilterActive, onSu
 
       <AdherenceRemarksDialog 
         open={remarksOpen} 
-        onOpenChange={(open) => {
-          setRemarksOpen(open);
-          if (!open && onSuccess) onSuccess();
-        }} 
+        onOpenChange={setRemarksOpen} 
         docType={selectedRow?.docType || ''} 
         docNo={selectedRow?.docNo || ''} 
+        onSuccess={onSuccess}
       />
 
       <NTEConfirmationDialog
