@@ -10,9 +10,10 @@ interface AdherenceRemarksDialogProps {
   onOpenChange: (open: boolean) => void;
   docType: string;
   docNo: string;
+  onSuccess?: () => void;
 }
 
-export function AdherenceRemarksDialog({ open, onOpenChange, docType, docNo }: AdherenceRemarksDialogProps) {
+export function AdherenceRemarksDialog({ open, onOpenChange, docType, docNo, onSuccess }: AdherenceRemarksDialogProps) {
   const [remarkId, setRemarkId] = useState<number | null>(null);
   const [remark, setRemark] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -81,6 +82,7 @@ export function AdherenceRemarksDialog({ open, onOpenChange, docType, docNo }: A
       const json = await res.json();
       if (json.ok) {
         toast.success(remarkId ? "Remark updated successfully" : "Remark created successfully");
+        if (onSuccess) onSuccess();
         onOpenChange(false);
       } else {
         toast.error(json.message || "Failed to save remark.");
