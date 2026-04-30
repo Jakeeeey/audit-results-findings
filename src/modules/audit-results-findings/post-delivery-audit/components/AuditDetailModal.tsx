@@ -579,7 +579,6 @@ function DetailTable({
                            <div className="font-black text-xs uppercase text-foreground group-hover:text-primary transition-colors">
                             {row.receiptNo}
                           </div>
-                          <div className="text-[9px] font-bold text-muted-foreground uppercase mt-0.5">INV ID: {row.invoiceId}</div>
                         </div>
                       </div>
                     </TableCell>

@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, Save, X, Terminal, Loader2 } from "lucide-react";
+import { MessageSquare, Save, Terminal, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AuditRemarksModalProps {
@@ -53,14 +53,6 @@ export function AuditRemarksModal({
                 <Terminal className="h-3 w-3" />
                 Audit Logs System
               </div>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={onClose} 
-                className="h-6 w-6 text-muted-foreground hover:text-foreground rounded-full"
-              >
-                <X className="w-4 h-4" />
-              </Button>
            </div>
            
            <div className="space-y-1">
