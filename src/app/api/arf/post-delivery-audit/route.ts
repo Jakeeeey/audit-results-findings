@@ -10,6 +10,99 @@ const fetchHeaders = {
   "Content-Type": "application/json",
 };
 
+interface DirectusPlan {
+  id: number;
+  driver_id: number;
+  status: string;
+  doc_no: string;
+  time_of_dispatch?: string | null;
+  time_of_arrival?: string | null;
+  remarks?: string;
+  date_encoded?: string;
+}
+
+interface DirectusUser {
+  user_id: number;
+  id?: number;
+  user_fname?: string;
+  user_lname?: string;
+  user_email?: string;
+  user_contact?: string;
+  user_image?: string;
+  first_name?: string;
+  last_name?: string;
+  department_id?: {
+    department_id: number;
+    department_name: string;
+  } | number;
+  user_department?: string;
+  department?: string;
+}
+
+interface DirectusPDI {
+  id: number;
+  invoice_id: number;
+  post_dispatch_plan_id: number;
+  isCleared: number | boolean;
+  invoiceAt?: number | null;
+  status: string;
+  remarks?: string;
+}
+
+interface DirectusSI {
+  invoice_id: number;
+  invoice_no: string;
+  total_amount: number;
+  net_amount: number;
+  discount_amount?: number;
+  salesman_id?: number;
+}
+
+interface DirectusUnfulfilled {
+  id: number;
+  sales_invoice_id: number;
+  nte?: string;
+  isCleared: number | boolean;
+  variance_amount?: number;
+  remarks?: string;
+}
+
+interface DirectusUnfulfilledDetail {
+  unfulfilled_sales_transaction_id: { id: number } | number;
+  sales_invoice_detail_id: { id: number } | number;
+  total_amount: number;
+}
+
+interface DirectusNTE {
+  id: number;
+  doc_no: string;
+  file: string;
+  post_dispatch_invoice_id: number;
+}
+
+interface DirectusReturnLink {
+  invoice_no: number;
+  return_no: number;
+}
+
+interface DirectusReturn {
+  return_id: number;
+  return_number: string;
+  total_amount: number;
+}
+
+interface DirectusMemo {
+  customer_reference: string | number;
+  amount: number;
+  memo_number: string;
+}
+
+interface DirectusStaff {
+  role: string;
+  is_present: number | boolean;
+  user_id: DirectusUser;
+}
+
 export async function GET(req: NextRequest) {
   const action = req.nextUrl.searchParams.get("action");
 
@@ -91,7 +184,7 @@ export async function GET(req: NextRequest) {
       const existingMemoRes = await fetch(existingMemoUrl, { headers: fetchHeaders, cache: "no-store" });
       const existingMemo = (await existingMemoRes.json()).data?.[0];
 
-      let customerCode = siData?.customer_code || salesReturns[0]?.customer_code;
+      const customerCode = siData?.customer_code || salesReturns[0]?.customer_code;
       let customer = { customer_code: customerCode, customer_name: "Unknown" };
       
       if (customerCode) {
@@ -117,7 +210,7 @@ export async function GET(req: NextRequest) {
           existingMemo: existingMemo || null,
           invoiceDetails: siData,
           generatedMemoNo,
-          resolvedSupplier // New: return the whole object
+          resolvedSupplier 
         }
       });
     }
@@ -126,18 +219,18 @@ export async function GET(req: NextRequest) {
       // 1. Get unique driver IDs from posted plans
       const planUrl = `${DIRECTUS_URL}/items/post_dispatch_plan?fields=driver_id&filter[status][_eq]=Posted&limit=-1`;
       const planRes = await fetch(planUrl, { headers: fetchHeaders, cache: "no-store" });
-      const planData = await planRes.json();
-      const driverIds = [...new Set((planData.data || []).map((p: any) => p.driver_id).filter(Boolean))];
+      const planData = await planRes.json() as { data: DirectusPlan[] };
+      const driverIds = [...new Set((planData.data || []).map((p: DirectusPlan) => p.driver_id).filter(Boolean))];
 
       if (driverIds.length === 0) return NextResponse.json({ data: [] });
 
       // 2. Fetch users from custom API
       const url = `${DIRECTUS_URL}/items/user?limit=-1&filter[user_id][_in]=${driverIds.join(",")}`;
       const res = await fetch(url, { cache: "no-store" });
-      const json = await res.json();
+      const json = await res.json() as DirectusUser[] | { data: DirectusUser[] };
       const rawData = Array.isArray(json) ? json : (json.data || []);
       
-      const mappedDrivers = rawData.map((u: any) => ({
+      const mappedDrivers = rawData.map((u: DirectusUser) => ({
         id: u.user_id,
         first_name: u.user_fname,
         last_name: u.user_lname,
@@ -156,7 +249,7 @@ export async function GET(req: NextRequest) {
       const dispatchNo = req.nextUrl.searchParams.get("dispatchNo");
 
       // 1. Fetch Post Dispatch Plans (Posted)
-      const planFilters: any = { status: { _eq: "Posted" } };
+      const planFilters: Record<string, unknown> = { status: { _eq: "Posted" } };
       if (dateFrom && dateTo) {
         // Use date_encoded for filtering to ensure we find "Posted" plans which might have null TOD
         planFilters.date_encoded = { _between: [dateFrom, dateTo] };
@@ -170,22 +263,23 @@ export async function GET(req: NextRequest) {
 
       const planUrl = `${DIRECTUS_URL}/items/post_dispatch_plan?fields=*&filter=${encodeURIComponent(JSON.stringify(planFilters))}&sort=-date_encoded&limit=-1`;
       const planRes = await fetch(planUrl, { headers: fetchHeaders, cache: "no-store" });
-      const planJson = await planRes.json();
+      const planJson = await planRes.json() as { data: DirectusPlan[] };
       const plans = planJson.data || [];
 
       if (plans.length === 0) return NextResponse.json({ data: [] });
 
-      const planIds = plans.map((p: any) => p.id);
-      const driverIds = [...new Set(plans.map((p: any) => p.driver_id).filter(Boolean))];
+      const planIds = plans.map((p: DirectusPlan) => p.id);
+      const driverIds = [...new Set(plans.map((p: DirectusPlan) => p.driver_id).filter(Boolean))];
 
       // 2. Fetch Drivers from custom source
-      let drivers: any[] = [];
+      let drivers: DirectusUser[] = [];
       if (driverIds.length > 0) {
-        const drvUrl = `http://goatedcodoer:8056/items/user?limit=-1&filter[user_id][_in]=${driverIds.join(",")}`;
+        const drvUrl = `${DIRECTUS_URL}/items/user?limit=-1&filter[user_id][_in]=${driverIds.join(",")}`;
         const drvRes = await fetch(drvUrl, { cache: "no-store" });
-        const drvJson = await drvRes.json();
+        const drvJson = await drvRes.json() as DirectusUser[] | { data: DirectusUser[] };
         const rawDrvs = Array.isArray(drvJson) ? drvJson : (drvJson.data || []);
-        drivers = rawDrvs.map((u: any) => ({
+        drivers = rawDrvs.map((u: DirectusUser) => ({
+          user_id: u.user_id,
           id: u.user_id,
           first_name: u.user_fname,
           last_name: u.user_lname
@@ -195,53 +289,53 @@ export async function GET(req: NextRequest) {
       // 3. Fetch Post Dispatch Invoices
       const pdiUrl = `${DIRECTUS_URL}/items/post_dispatch_invoices?limit=-1&filter[post_dispatch_plan_id][_in]=${planIds.join(",")}`;
       const pdiRes = await fetch(pdiUrl, { headers: fetchHeaders, cache: "no-store" });
-      const pdiJson = await pdiRes.json();
+      const pdiJson = await pdiRes.json() as { data: DirectusPDI[] };
       const pdis = pdiJson.data || [];
 
       // 4. Fetch Sales Invoices
-      const invoiceIds = [...new Set(pdis.map((p: any) => p.invoice_id))];
-      let salesInvoices: any[] = [];
+      const invoiceIds = [...new Set(pdis.map((p: DirectusPDI) => p.invoice_id))];
+      let salesInvoices: DirectusSI[] = [];
       if (invoiceIds.length > 0) {
         const chunkSize = 200;
         for (let i = 0; i < invoiceIds.length; i += chunkSize) {
           const chunk = invoiceIds.slice(i, i + chunkSize);
           const siUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&fields=invoice_id,invoice_no&filter[invoice_id][_in]=${chunk.join(",")}`;
           const siRes = await fetch(siUrl, { headers: fetchHeaders, cache: "no-store" });
-          const siJson = await siRes.json();
+          const siJson = await siRes.json() as { data: DirectusSI[] };
           salesInvoices = [...salesInvoices, ...(siJson.data || [])];
         }
       }
 
       // 5. Fetch Unfulfilled Transactions (Concerns)
-      let unfulfilled: any[] = [];
+      let unfulfilled: DirectusUnfulfilled[] = [];
       if (invoiceIds.length > 0) {
         const chunkSize = 200;
         for (let i = 0; i < invoiceIds.length; i += chunkSize) {
           const chunk = invoiceIds.slice(i, i + chunkSize);
           const ufUrl = `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?limit=-1&fields=sales_invoice_id&filter[sales_invoice_id][_in]=${chunk.join(",")}`;
           const ufRes = await fetch(ufUrl, { headers: fetchHeaders, cache: "no-store" });
-          const ufJson = await ufRes.json();
+          const ufJson = await ufRes.json() as { data: DirectusUnfulfilled[] };
           unfulfilled = [...unfulfilled, ...(ufJson.data || [])];
         }
       }
 
       // 6. Fetch Sales Returns
-      const invoiceNos = salesInvoices.map((si: any) => si.invoice_no).filter(Boolean);
-      let returns: any[] = [];
+      const invoiceNos = salesInvoices.map((si: DirectusSI) => si.invoice_no).filter(Boolean);
+      let returns: DirectusReturn[] = [];
       if (invoiceNos.length > 0) {
         const chunkSize = 100;
         for (let i = 0; i < invoiceNos.length; i += chunkSize) {
           const chunk = invoiceNos.slice(i, i + chunkSize);
           const srUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=invoice_no&filter[invoice_no][_in]=${chunk.join(",")}`;
           const srRes = await fetch(srUrl, { headers: fetchHeaders, cache: "no-store" });
-          const srJson = await srRes.json();
+          const srJson = await srRes.json() as { data: DirectusReturn[] };
           returns = [...returns, ...(srJson.data || [])];
         }
       }
 
       // 7. Aggregate
-      const result = plans.map((plan: any) => {
-        const planInvoices = pdis.filter((p: any) => p.post_dispatch_plan_id === plan.id);
+      const result = plans.map((plan: DirectusPlan) => {
+        const planInvoices = pdis.filter((p: DirectusPDI) => p.post_dispatch_plan_id === plan.id);
         
         let auditedCount = 0;
         let receivedCount = 0;
@@ -250,7 +344,7 @@ export async function GET(req: NextRequest) {
         let withReturnsCount = 0;
         let withConcernsCount = 0;
 
-        planInvoices.forEach((pdi: any) => {
+        planInvoices.forEach((pdi: DirectusPDI) => {
           if (pdi.isCleared === 1 || pdi.isCleared === true) {
             auditedCount++;
           }
@@ -272,7 +366,7 @@ export async function GET(req: NextRequest) {
         const totalInvoices = planInvoices.length;
         const percentage = totalInvoices > 0 ? ((auditedCount + receivedCount) / (totalInvoices * 2)) * 100 : 0;
 
-        const driver = drivers.find((d: any) => d.id === plan.driver_id);
+        const driver = drivers.find((d: DirectusUser) => d.id === plan.driver_id);
         const driverName = driver 
           ? `${driver.first_name || ""} ${driver.last_name || ""}`.trim() 
           : plan.driver_id ? `ID: ${plan.driver_id}` : "N/A";
@@ -295,7 +389,7 @@ export async function GET(req: NextRequest) {
         };
       });
 
-      const sortedResult = result.sort((a: any, b: any) => (a.percentage || 0) - (b.percentage || 0));
+      const sortedResult = result.sort((a: { percentage?: number }, b: { percentage?: number }) => (a.percentage || 0) - (b.percentage || 0));
 
       // 6. Pagination
       const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
@@ -382,27 +476,27 @@ export async function GET(req: NextRequest) {
       const staffUrl = `${DIRECTUS_URL}/items/post_dispatch_plan_staff?filter[post_dispatch_plan_id][_eq]=${planId}&fields=role,is_present,user_id.*,user_id.department_id.*`;
       const staffRes = await fetch(staffUrl, { headers: fetchHeaders, cache: "no-store" });
       const staffJson = await staffRes.json();
-      const staffData = staffJson.data || [];
+      const staffData = staffJson.data || [] as DirectusStaff[];
 
       // Filter by is_present in JS (handling both 1/0 and true/false)
-      const presentStaff = staffData.filter((s: any) => s.is_present == 1 || s.is_present === true);
+      const presentStaff = staffData.filter((s: DirectusStaff) => s.is_present == 1 || s.is_present === true);
       
       // Fallback: if no one is marked present, take everyone (to avoid N/A during testing)
       const activeStaff = presentStaff.length > 0 ? presentStaff : staffData;
 
-      const driverStaff = activeStaff.find((s: any) => s.role === "Driver");
-      const helperStaff = activeStaff.filter((s: any) => s.role === "Helper");
+      const driverStaff = activeStaff.find((s: DirectusStaff) => s.role === "Driver");
+      const helperStaff = activeStaff.filter((s: DirectusStaff) => s.role === "Helper");
       const pdiUrl = `${DIRECTUS_URL}/items/post_dispatch_invoices?limit=-1&filter[post_dispatch_plan_id][_eq]=${planId}`;
       const pdiRes = await fetch(pdiUrl, { headers: fetchHeaders, cache: "no-store" });
       const pdiJson = await pdiRes.json();
-      const pdis = pdiJson.data || [];
+      const pdis: DirectusPDI[] = pdiJson.data || [];
       if (pdis.length > 0) {
         console.log("PDI Sample Record:", JSON.stringify(pdis[0], null, 2));
       }
 
       if (pdis.length === 0) return NextResponse.json({ data: [] });
 
-      const invoiceIds = pdis.map((p: any) => p.invoice_id);
+      const invoiceIds = pdis.map((p: DirectusPDI) => p.invoice_id);
 
       // 2. Fetch Sales Invoices
       const siUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&fields=invoice_id,invoice_no,total_amount,net_amount,discount_amount&filter[invoice_id][_in]=${invoiceIds.join(",")}`;
@@ -419,8 +513,8 @@ export async function GET(req: NextRequest) {
       const ufData = (await ufRes.json()).data || [];
 
       // Step 3b: Fetch Unfulfilled Sales Transaction Details
-      const ufIds = ufData.map((u: any) => u.id);
-      let ufDetailsData: any[] = [];
+      const ufIds = ufData.map((u: DirectusUnfulfilled) => u.id);
+      let ufDetailsData: DirectusUnfulfilledDetail[] = [];
       if (ufIds.length > 0) {
         const ufdUrl = `${DIRECTUS_URL}/items/unfulfilled_sales_transaction_details?limit=-1&fields=unfulfilled_sales_transaction_id,sales_invoice_detail_id,total_amount&filter[unfulfilled_sales_transaction_id][_in]=${ufIds.join(",")}`;
         const ufdRes = await fetch(ufdUrl, { headers: fetchHeaders, cache: "no-store" });
@@ -428,28 +522,29 @@ export async function GET(req: NextRequest) {
       }
 
       // Step 3c: Fetch Sales Invoice Details (using IDs from unfulfilled details)
-      const siDetailIds = [...new Set(ufDetailsData.map(d => d.sales_invoice_detail_id?.id || d.sales_invoice_detail_id).filter(id => id && !isNaN(Number(id))))];
-      let siDetailData: any[] = [];
+      const siDetailIds = [...new Set(ufDetailsData.map(d => {
+        const sid = d.sales_invoice_detail_id as unknown as { id: number } | number;
+        return typeof sid === 'object' ? sid.id : sid;
+      }).filter(id => id && !isNaN(Number(id))))];
       if (siDetailIds.length > 0) {
         // Use detail_id instead of id for the join as per instruction
         const sidUrl = `${DIRECTUS_URL}/items/sales_invoice_details?limit=-1&fields=detail_id,total_amount&filter[detail_id][_in]=${siDetailIds.join(",")}`;
-        const sidRes = await fetch(sidUrl, { headers: fetchHeaders, cache: "no-store" });
-        siDetailData = (await sidRes.json()).data || [];
+        await fetch(sidUrl, { headers: fetchHeaders, cache: "no-store" });
       }
 
       // Step 3d: Fetch NTEs from post_dispatch_nte
-      const nteUrl = `${DIRECTUS_URL}/items/post_dispatch_nte?limit=-1&fields=id,doc_no,file,post_dispatch_invoice_id&filter[post_dispatch_invoice_id][_in]=${pdis.map((p: any) => p.id).join(",")}`;
+      const nteUrl = `${DIRECTUS_URL}/items/post_dispatch_nte?limit=-1&fields=id,doc_no,file,post_dispatch_invoice_id&filter[post_dispatch_invoice_id][_in]=${pdis.map((p: DirectusPDI) => p.id).join(",")}`;
       const nteRes = await fetch(nteUrl, { headers: fetchHeaders, cache: "no-store" });
-      const nteData = (await nteRes.json()).data || [];
+      const nteData = (await nteRes.json()).data || [] as DirectusNTE[];
       
       // Step 3e: Fetch all departments for name mapping (to avoid IDs like "8")
       const allDeptsRes = await fetch(`${DIRECTUS_URL}/items/department?limit=-1&fields=department_id,department_name`, { headers: fetchHeaders, cache: "no-store" });
-      const allDepts = (await allDeptsRes.json()).data || [];
-      const deptMap = new Map(allDepts.map((d: any) => [String(d.department_id), d.department_name]));
+      const allDepts = (await allDeptsRes.json()).data || [] as { department_id: number; department_name: string }[];
+      const deptMap = new Map(allDepts.map((d: { department_id: number; department_name: string }) => [String(d.department_id), d.department_name]));
 
       // 4. Fetch Sales Returns and Linking Table
-      let returns: any[] = [];
-      let returnLinks: any[] = [];
+      let returns: DirectusReturn[] = [];
+      let returnLinks: DirectusReturnLink[] = [];
       
       if (invoiceIds.length > 0) {
         // Fetch the linking table first: sales_invoice_sales_return
@@ -457,7 +552,7 @@ export async function GET(req: NextRequest) {
         const linkRes = await fetch(linkUrl, { headers: fetchHeaders, cache: "no-store" });
         returnLinks = (await linkRes.json()).data || [];
 
-        const returnIds = [...new Set(returnLinks.map((l: any) => l.return_no))];
+        const returnIds = [...new Set(returnLinks.map((l: DirectusReturnLink) => l.return_no))];
         if (returnIds.length > 0) {
           const srUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=*&filter[return_id][_in]=${returnIds.join(",")}`;
           const srRes = await fetch(srUrl, { headers: fetchHeaders, cache: "no-store" });
@@ -466,8 +561,8 @@ export async function GET(req: NextRequest) {
       }
 
       // 5. Fetch Customer Memos for discrepancy tracking
-      const siNos = salesInvoices.map((si: any) => si.invoice_no).filter(Boolean);
-      let memos: any[] = [];
+      const siNos = salesInvoices.map((si: DirectusSI) => si.invoice_no).filter(Boolean);
+      let memos: DirectusMemo[] = [];
       if (siNos.length > 0) {
         const memoUrl = `${DIRECTUS_URL}/items/customers_memo?limit=-1&fields=customer_reference,amount,memo_number&filter[customer_reference][_in]=${siNos.join(",")}`;
         const memoRes = await fetch(memoUrl, { headers: fetchHeaders, cache: "no-store" });
@@ -475,28 +570,28 @@ export async function GET(req: NextRequest) {
       }
 
       // 6. Build detailed list based on user's status-based logic
-      const details = pdis.map((pdi: any) => {
-        const si = salesInvoices.find((s: any) => s.invoice_id === pdi.invoice_id);
-        const memo = memos.find((m: any) => String(m.customer_reference) === String(si?.invoice_no));
+      const details = pdis.map((pdi: DirectusPDI) => {
+        const si = salesInvoices.find((s: DirectusSI) => s.invoice_id === pdi.invoice_id);
+        const memo = memos.find((m: DirectusMemo) => String(m.customer_reference) === String(si?.invoice_no));
         
         // Find ALL return links for this invoice
-        const currentReturnLinks = returnLinks.filter((l: any) => Number(l.invoice_no) === Number(pdi.invoice_id));
-        const linkedReturns = currentReturnLinks.map((link: any) => {
-          const r = returns.find((ret: any) => ret.return_id === link.return_no);
+        const currentReturnLinks = returnLinks.filter((l: DirectusReturnLink) => Number(l.invoice_no) === Number(pdi.invoice_id));
+        const linkedReturns = currentReturnLinks.map((link: DirectusReturnLink) => {
+          const r = returns.find((ret: DirectusReturn) => ret.return_id === link.return_no);
           return r ? { no: r.return_number, amount: Number(r.total_amount) || 0 } : null;
         }).filter(Boolean);
         
         const returnTotalAmount = linkedReturns.reduce((acc, curr) => acc + (curr?.amount || 0), 0);
         
         // Find concern record for this invoice
-        const concern = ufData.find((uf: any) => Number(uf.sales_invoice_id) === Number(pdi.invoice_id));
+        const concern = ufData.find((uf: DirectusUnfulfilled) => Number(uf.sales_invoice_id) === Number(pdi.invoice_id));
         
         // DISCREPANCY calculation (Sum of total_amount from unfulfilled_sales_transaction_details)
         let discrepancySum = 0;
         if (concern) {
           discrepancySum = ufDetailsData
             .filter(d => {
-              const uftId = d.unfulfilled_sales_transaction_id?.id || d.unfulfilled_sales_transaction_id;
+              const uftId = typeof d.unfulfilled_sales_transaction_id === 'object' ? d.unfulfilled_sales_transaction_id?.id : d.unfulfilled_sales_transaction_id;
               return Number(uftId) === Number(concern.id);
             })
             .reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0);
@@ -520,7 +615,7 @@ export async function GET(req: NextRequest) {
         const payableAmount = pdi.status === "Fulfilled With Returns" ? ((si?.net_amount || 0) - returnTotalAmountVal) : 0;
 
         // Find ALL NTE records
-        const relatedNtes = nteData.filter((n: any) => Number(n.post_dispatch_invoice_id) === Number(pdi.id));
+        const relatedNtes = nteData.filter((n: DirectusNTE) => Number(n.post_dispatch_invoice_id) === Number(pdi.id));
 
         return {
           id: pdi.id,
@@ -537,7 +632,7 @@ export async function GET(req: NextRequest) {
           isReceived: !!pdi.invoiceAt,
           concernId: concern?.id,
           memoNo: memo?.memo_number || "---", // Add memo number for UI reference
-          ntes: relatedNtes.map((n: any) => ({
+          ntes: relatedNtes.map((n: DirectusNTE) => ({
             no: n.doc_no,
             fileId: n.file
           })),
@@ -568,7 +663,7 @@ export async function GET(req: NextRequest) {
             const dId = driverStaff?.user_id?.department_id?.department_id || driverStaff?.user_id?.department_id || driverStaff?.user_id?.user_department;
             return deptMap.get(String(dId)) || dId || "Operations Department";
           })(),
-          helpers: helperStaff.map((h: any) => {
+          helpers: helperStaff.map((h: DirectusStaff) => {
             if (!h.user_id) return null;
             return h.user_id.user_fname 
               ? `${h.user_id.user_fname} ${h.user_id.user_lname || ""}`.trim()
@@ -579,8 +674,8 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }
 
@@ -616,7 +711,7 @@ export async function POST(req: NextRequest) {
 
       // 1. Prepare updates for post_dispatch_invoices (Always update isCleared)
       const pdiUpdates = updates.map(u => {
-        const update: any = {
+        const update: Record<string, unknown> = {
           id: u.id,
           isCleared: u.is_audited ? 1 : 0
         };
@@ -856,7 +951,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }

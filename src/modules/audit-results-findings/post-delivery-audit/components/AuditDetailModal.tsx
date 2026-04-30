@@ -2,9 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -30,16 +28,9 @@ import {
   Receipt,
   Wallet,
   ArrowRightLeft,
-  MoreVertical,
   PlusCircle,
   FileWarning
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -52,12 +43,40 @@ import { fetchProvider } from "../providers/fetchProvider";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+interface AuditDetailRecord {
+  id: number;
+  status: string;
+  isAudited: boolean;
+  isReceived: boolean;
+  concernId?: number;
+  amount: number;
+  payableAmount?: number;
+  returnedAmount?: number;
+  discrepancyAmount?: number;
+  rejectedAmount?: number;
+  receiptNo: string;
+  invoiceId: number;
+  warehouseRemarks?: string;
+  ntes?: { fileId: string; no: string }[];
+  linkedReturns?: { no: string; amount?: number }[];
+  concern?: { remarks: string };
+}
+
+interface AuditPlanInfo {
+  driver: string;
+  driverId: number;
+  toa: string;
+  docNo: string;
+  driverDepartment: string;
+  helpers: string[];
+}
+
 interface AuditDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   planId: number;
   dispatchNo: string;
-  user?: any;
+  user?: { id: number | string; name?: string; position?: string; [key: string]: unknown };
 }
 
 export function AuditDetailModal({
@@ -69,51 +88,64 @@ export function AuditDetailModal({
 }: AuditDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [details, setDetails] = useState<any[]>([]);
-  const [planInfo, setPlanInfo] = useState<any>(null);
-  const [originalDetails, setOriginalDetails] = useState<any[]>([]);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [details, setDetails] = useState<AuditDetailRecord[]>([]);
+  const [planInfo, setPlanInfo] = useState<AuditPlanInfo | null>(null);
+  const [originalDetails, setOriginalDetails] = useState<AuditDetailRecord[]>([]);
+  const [userProfile, setUserProfile] = useState<{ user_id: number; user_fname?: string; user_lname?: string; user_position?: string; departmentName?: string; user_department?: string; department?: string; [key: string]: unknown } | null>(null);
   const [previewNTE, setPreviewNTE] = useState<{
     isOpen: boolean;
-    data: any;
+    data: {
+      pdiId: number;
+      userId?: number | string;
+      driverName: string;
+      amount: number;
+      toa: string;
+      dispatchNo: string;
+      invoiceNo: string;
+      userName: string;
+      userPosition: string;
+      userDepartment: string;
+      driverDepartment: string;
+      helpers: string[];
+    } | null;
   }>({
     isOpen: false,
     data: null,
   });
   const [memoModal, setMemoModal] = useState<{ isOpen: boolean, invoiceNo: string }>({ isOpen: false, invoiceNo: "" });
 
-  useEffect(() => {
-    if (isOpen && planId) {
-      loadDetails();
-    }
-    if (isOpen && user?.id) {
-      loadUserProfile();
-    }
-  }, [isOpen, planId, user?.id]);
-
-  const loadUserProfile = async () => {
+  const loadUserProfile = React.useCallback(async (id: number | string) => {
     try {
-      const profile = await fetchProvider.getProfile(user.id);
+      const profile = await fetchProvider.getProfile(id);
       setUserProfile(profile);
     } catch (e) {
       console.error("Failed to load user profile", e);
     }
-  };
+  }, []);
 
-  const loadDetails = async () => {
+  const loadDetails = React.useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetchProvider.getAuditDetails(planId);
       setDetails(res.data || []);
       setPlanInfo(res.plan || null);
       setOriginalDetails(JSON.parse(JSON.stringify(res.data || [])));
-    } catch (e) {
+    } catch (e: unknown) {
       console.error(e);
       toast.error("Failed to load audit details");
     } finally {
       setLoading(false);
     }
-  };
+  }, [planId]);
+
+  useEffect(() => {
+    if (isOpen && planId) {
+      loadDetails();
+    }
+    if (isOpen && user?.id) {
+      loadUserProfile(user.id);
+    }
+  }, [isOpen, planId, user?.id, loadDetails, loadUserProfile]);
 
   const handleToggle = (id: number, field: "isAudited" | "isReceived") => {
     setDetails(prev => prev.map(item => 
@@ -128,19 +160,16 @@ export function AuditDetailModal({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Try to get userId from localStorage - common pattern in this project
       const rawUser = localStorage.getItem("user") || localStorage.getItem("profile") || localStorage.getItem("auth_user");
       let userId = undefined;
       
       if (rawUser) {
         try {
           const parsed = JSON.parse(rawUser);
-          // Try all possible ID keys
           userId = parsed.user_id || parsed.id || parsed.userId || parsed.uid;
         } catch { /* ignore */ }
       }
 
-      // If we still don't have a userId, try getting it from the userProfile state
       if (!userId && userProfile) {
         userId = userProfile.user_id || userProfile.id;
       }
@@ -162,7 +191,7 @@ export function AuditDetailModal({
       await fetchProvider.updateInvoices(updates, userId);
       toast.success("Audit records saved successfully");
       setOriginalDetails(JSON.parse(JSON.stringify(details)));
-    } catch (e) {
+    } catch (e: unknown) {
       console.error(e);
       toast.error("Failed to save audit records");
     } finally {
@@ -170,13 +199,11 @@ export function AuditDetailModal({
     }
   };
 
-  const triggerGenerateNTE = (row: any) => {
+  const triggerGenerateNTE = (row: AuditDetailRecord) => {
     let userName = userProfile ? `${userProfile.user_fname || ""} ${userProfile.user_lname || ""}`.trim() : (user?.name || "N/A");
     let userPosition = userProfile?.user_position || user?.position || "Auditor";
 
-    // If name is still N/A, try our robust fallbacks
     if (userName === "N/A" || !userName) {
-      // Helper to get cookie on client
       const getCookie = (name: string) => {
         if (typeof document === 'undefined') return null;
         const value = `; ${document.cookie}`;
@@ -185,7 +212,6 @@ export function AuditDetailModal({
         return null;
       };
 
-      // Helper to decode JWT on client
       const decodeToken = (token: string) => {
         try {
           const base64Url = token.split('.')[1];
@@ -194,20 +220,18 @@ export function AuditDetailModal({
             return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
           }).join(''));
           return JSON.parse(jsonPayload);
-        } catch (e) {
+        } catch {
           return null;
         }
       };
 
-      let userData: any = null;
+      let userData: { user_fname?: string; first_name?: string; FirstName?: string; Firstname?: string; firstName?: string; firstname?: string; user_lname?: string; last_name?: string; LastName?: string; Lastname?: string; lastName?: string; lastname?: string; display_name?: string; name?: string; fullName?: string; email?: string; user_position?: string; position?: string; role?: string; Role?: string } | null = null;
 
-      // 1. Try Cookie
       const token = getCookie("vos_access_token");
       if (token) {
         userData = decodeToken(token);
       }
 
-      // 2. Try LocalStorage
       if (!userData) {
         const rawUser = localStorage.getItem("user") || localStorage.getItem("profile") || localStorage.getItem("vos_user");
         if (rawUser) {
@@ -224,7 +248,7 @@ export function AuditDetailModal({
         if (first || last) {
           userName = `${first} ${last}`.trim();
         } else if (userData.display_name || userData.name || userData.fullName) {
-          userName = userData.display_name || userData.name || userData.fullName;
+          userName = userData.display_name || userData.name || userData.fullName || "";
         } else if (userData.email) {
           userName = userData.email.split("@")[0];
         }
@@ -252,7 +276,7 @@ export function AuditDetailModal({
     });
   };
 
-  const handleCreateMemo = (row: any) => {
+  const handleCreateMemo = (row: AuditDetailRecord) => {
     setMemoModal({ isOpen: true, invoiceNo: row.receiptNo });
   };
 
@@ -272,7 +296,6 @@ export function AuditDetailModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-0 overflow-hidden bg-background border-border shadow-2xl">
-        {/* Header Section */}
         <div className="bg-muted/30 p-6 border-b border-border shrink-0 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 blur-[100px] -mr-32 -mt-32 rounded-full" />
           
@@ -311,7 +334,6 @@ export function AuditDetailModal({
             </div>
           </div>
 
-          {/* Quick Metrics */}
           <div className="grid grid-cols-4 gap-4 mt-8">
               {[
                 { 
@@ -336,7 +358,7 @@ export function AuditDetailModal({
                 },
                 { 
                   label: "Total Returns", 
-                  val: details.reduce((acc, d) => acc + (Number(d.returnedAmount) || 0) + (Number(d.linkedReturn?.amount) || 0), 0), 
+                  val: details.reduce((acc, d) => acc + (Number(d.returnedAmount) || 0) + (Number(d.linkedReturns?.[0]?.amount) || 0), 0), 
                   icon: Undo2, 
                   color: "text-amber-500", 
                   bg: "bg-amber-500/10" 
@@ -362,7 +384,6 @@ export function AuditDetailModal({
           </div>
         </div>
 
-        {/* Content Section */}
         <div className="flex-1 flex flex-col overflow-hidden px-6 pb-6">
           {loading ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4">
@@ -451,7 +472,7 @@ export function AuditDetailModal({
   );
 }
 
-function StatusTabTrigger({ value, label, count, icon: Icon, color }: { value: string, label: string, count: number, icon: any, color: string }) {
+function StatusTabTrigger({ value, label, count, icon: Icon, color }: { value: string, label: string, count: number, icon: React.ElementType, color: string }) {
   return (
     <TabsTrigger 
       value={value} 
@@ -476,12 +497,12 @@ function DetailTable({
   onGenerateNTE,
   onCreateMemo
 }: { 
-  data: any[], 
+  data: AuditDetailRecord[], 
   type: string, 
   formatPHP: (v: number) => string, 
   onToggle: (id: number, field: "isAudited" | "isReceived") => void,
-  onGenerateNTE: (row: any) => void,
-  onCreateMemo: (row: any) => void
+  onGenerateNTE: (row: AuditDetailRecord) => void,
+  onCreateMemo: (row: AuditDetailRecord) => void
 }) {
   return (
     <ScrollArea className="h-full">
@@ -580,7 +601,7 @@ function DetailTable({
                         <TableCell className="px-6 text-[10px] font-black text-rose-500 uppercase">
                           <div className="flex flex-col gap-1">
                             {row.ntes && row.ntes.length > 0 ? (
-                              row.ntes.map((nte: any, idx: number) => (
+                              row.ntes.map((nte, idx) => (
                                 <a 
                                   key={idx}
                                   href={`${process.env.NEXT_PUBLIC_API_BASE_URL}/assets/${nte.fileId}`} 
@@ -598,10 +619,10 @@ function DetailTable({
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-black text-xs text-rose-500">
-                          {formatPHP(row.discrepancyAmount)}
+                          {formatPHP(row.discrepancyAmount || 0)}
                         </TableCell>
                         <TableCell className="text-right font-black text-xs text-amber-500">
-                          {formatPHP(row.returnedAmount)}
+                          {formatPHP(row.returnedAmount || 0)}
                         </TableCell>
                       </>
                     )}
@@ -611,7 +632,7 @@ function DetailTable({
                         <TableCell className="px-6 text-xs font-black text-blue-500 uppercase tracking-tight">
                           <div className="flex flex-col gap-1">
                             {row.linkedReturns && row.linkedReturns.length > 0 ? (
-                              row.linkedReturns.map((ret: any, idx: number) => (
+                              row.linkedReturns.map((ret, idx) => (
                                 <span key={idx}>{ret.no}</span>
                               ))
                             ) : (
@@ -622,7 +643,7 @@ function DetailTable({
                         <TableCell className="px-6 text-[10px] font-black text-rose-500 uppercase">
                           <div className="flex flex-col gap-1">
                             {row.ntes && row.ntes.length > 0 ? (
-                              row.ntes.map((nte: any, idx: number) => (
+                              row.ntes.map((nte, idx) => (
                                 <a 
                                   key={idx}
                                   href={`${process.env.NEXT_PUBLIC_API_BASE_URL}/assets/${nte.fileId}`} 
@@ -643,10 +664,10 @@ function DetailTable({
                           {row.warehouseRemarks || "---"}
                         </TableCell>
                         <TableCell className="text-right font-black text-xs text-rose-500">
-                          {formatPHP(row.discrepancyAmount)}
+                          {formatPHP(row.discrepancyAmount || 0)}
                         </TableCell>
                         <TableCell className="text-right font-black text-xs text-primary">
-                          {formatPHP(row.payableAmount)}
+                          {formatPHP(row.payableAmount || 0)}
                         </TableCell>
                       </>
                     )}
@@ -659,7 +680,7 @@ function DetailTable({
                         <TableCell className="px-6 text-[10px] font-black text-rose-500 uppercase">
                           <div className="flex flex-col gap-1">
                             {row.ntes && row.ntes.length > 0 ? (
-                              row.ntes.map((nte: any, idx: number) => (
+                              row.ntes.map((nte, idx) => (
                                 <a 
                                   key={idx}
                                   href={`${process.env.NEXT_PUBLIC_API_BASE_URL}/assets/${nte.fileId}`} 

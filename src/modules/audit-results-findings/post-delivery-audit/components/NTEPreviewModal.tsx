@@ -11,7 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { 
-  X, 
   Save,
   Loader2,
   FileText
@@ -19,8 +18,6 @@ import {
 import { PdfEngine } from "@/components/pdf-layout-design/PdfEngine";
 import { pdfTemplateService } from "@/components/pdf-layout-design/services/pdf-template";
 import { CompanyData } from "@/components/pdf-layout-design/types";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { fetchProvider } from "../providers/fetchProvider";
 
@@ -30,7 +27,7 @@ interface NTEPreviewModalProps {
   onSuccess?: () => void;
   data: {
     pdiId: number;
-    userId?: number;
+    userId?: number | string;
     driverName: string;
     amount: number;
     toa: string;
@@ -54,13 +51,7 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      generatePreview();
-    }
-  }, [isOpen, data]);
-
-  const generatePreview = async () => {
+  const generatePreview = React.useCallback(async () => {
     setIsGenerating(true);
     try {
       // 1. Fetch Company Data
@@ -238,12 +229,18 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
       const blob = doc.output("blob");
       const url = URL.createObjectURL(blob);
       setPdfUrl(url);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error generating NTE preview:", error);
     } finally {
       setIsGenerating(false);
     }
-  };
+  }, [data, companyData]);
+
+  useEffect(() => {
+    if (isOpen) {
+      generatePreview();
+    }
+  }, [isOpen, generatePreview]);
 
   const handleGenerate = async () => {
     if (!isOpen || !data || isGenerating) return;
@@ -414,9 +411,9 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
       toast.success(`NTE Generated Successfully: ${result.docNo}`);
       onSuccess?.(); // Refresh the table
       onClose();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      toast.error(e.message || "Failed to generate and save NTE");
+      toast.error((e as Error).message || "Failed to generate and save NTE");
     } finally {
       setIsGenerating(false);
     }

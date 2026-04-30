@@ -9,7 +9,10 @@ export const fetchProvider = {
     return json.data || [];
   },
 
-  getAuditData: async (filters: PostDeliveryAuditFilters): Promise<{ data: PostDeliveryAuditRecord[], meta?: any }> => {
+  getAuditData: async (filters: PostDeliveryAuditFilters): Promise<{ 
+    data: PostDeliveryAuditRecord[], 
+    meta?: { total: number; page: number; pageSize: number; hasMore: boolean } 
+  }> => {
     const params = new URLSearchParams();
     params.append("action", "list");
     if (filters.dateFrom) params.append("dateFrom", filters.dateFrom);
@@ -43,7 +46,7 @@ export const fetchProvider = {
     return json;
   },
 
-  updateInvoices: async (updates: any[], userId?: number) => {
+  updateInvoices: async (updates: { id: number; is_audited?: boolean; is_received?: boolean; status?: string; concernId?: number }[], userId?: number | string) => {
     const res = await fetch(BASE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -54,7 +57,7 @@ export const fetchProvider = {
     return json.success;
   },
 
-  postNTE: async (pdiId: number, fileBase64: string, userId?: number) => {
+  postNTE: async (pdiId: number, fileBase64: string, userId?: number | string) => {
     const res = await fetch(BASE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

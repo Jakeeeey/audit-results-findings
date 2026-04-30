@@ -12,8 +12,6 @@ import {
   TrendingUp,
   CheckCircle2,
   AlertTriangle,
-  Clock,
-  ArrowUpRight,
   MoreVertical,
   MessageSquare,
   FileText
@@ -40,17 +38,25 @@ import { AuditRemarksModal } from "./components/AuditRemarksModal";
 import { AuditDetailModal } from "./components/AuditDetailModal";
 import { toast } from "sonner";
 
-export default function PostDeliveryAuditModule({ user }: { user?: any }) {
+export default function PostDeliveryAuditModule({ user }: { user?: { id: number | string; [key: string]: unknown } }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<PostDeliveryAuditRecord[]>([]);
-  const [drivers, setDrivers] = useState<any[]>([]);
+  const [drivers, setDrivers] = useState<{ id: number; first_name: string; last_name: string; [key: string]: unknown }[]>([]);
   
-  // Filters
+  // Filters (Inputs)
   const [dateFrom, setDateFrom] = useState<string>(format(new Date(), "yyyy-MM-01"));
   const [dateTo, setDateTo] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [driverId, setDriverId] = useState<string>("ALL");
   const [dispatchNo, setDispatchNo] = useState<string>("");
   const [openDriverSelect, setOpenDriverSelect] = useState(false);
+
+  // Applied Filters (The actual filters used for fetching)
+  const [appliedFilters, setAppliedFilters] = useState({
+    dateFrom: format(new Date(), "yyyy-MM-01"),
+    dateTo: format(new Date(), "yyyy-MM-dd"),
+    driverId: "ALL",
+    dispatchNo: ""
+  });
 
   // Pagination & Lazy Loading
   const [page, setPage] = useState(1);
@@ -58,7 +64,7 @@ export default function PostDeliveryAuditModule({ user }: { user?: any }) {
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const observer = useRef<IntersectionObserver | null>(null);
 
-  const lastElementRef = useCallback((node: any) => {
+  const lastElementRef = useCallback((node: HTMLTableRowElement | null) => {
     if (loading || isFetchingMore) return;
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
@@ -74,35 +80,16 @@ export default function PostDeliveryAuditModule({ user }: { user?: any }) {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<PostDeliveryAuditRecord | null>(null);
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const driversList = await fetchProvider.getDrivers();
-        setDrivers(driversList || []);
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    init();
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (page > 1) {
-      fetchData(page, true);
-    }
-  }, [page]);
-
-  const fetchData = async (pageNum = 1, isAppend = false) => {
+  const fetchData = useCallback(async (pageNum = 1, isAppend = false) => {
     if (pageNum === 1) setLoading(true);
     else setIsFetchingMore(true);
 
     try {
       const filters: PostDeliveryAuditFilters = {
-        dateFrom,
-        dateTo,
-        driverId,
-        dispatchNo: dispatchNo || undefined,
+        dateFrom: appliedFilters.dateFrom,
+        dateTo: appliedFilters.dateTo,
+        driverId: appliedFilters.driverId,
+        dispatchNo: appliedFilters.dispatchNo || undefined,
         page: pageNum,
         pageSize: 15
       };
@@ -120,12 +107,40 @@ export default function PostDeliveryAuditModule({ user }: { user?: any }) {
       setLoading(false);
       setIsFetchingMore(false);
     }
-  };
+  }, [appliedFilters]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const driversList = await fetchProvider.getDrivers();
+        setDrivers(driversList || []);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    init();
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (page > 1) {
+      fetchData(page, true);
+    }
+  }, [page, fetchData]);
 
   const handleFilter = () => {
+    setAppliedFilters({
+      dateFrom,
+      dateTo,
+      driverId,
+      dispatchNo
+    });
     setPage(1);
-    fetchData(1, false);
   };
+
+  useEffect(() => {
+    fetchData(1, false);
+  }, [appliedFilters, fetchData]);
 
   const handleUpdateRemarks = async (remarks: string) => {
     if (!selectedRow) return;
@@ -233,7 +248,7 @@ export default function PostDeliveryAuditModule({ user }: { user?: any }) {
                     role="combobox"
                     className="w-full justify-between bg-background border-border h-11 text-xs font-black uppercase tracking-wide hover:bg-muted font-mono"
                   >
-                    {driverId === "ALL" ? "All Active Drivers" : drivers.find(d => String(d.id) === driverId)?.first_name ? `${drivers.find(d => String(d.id) === driverId).first_name} ${drivers.find(d => String(d.id) === driverId).last_name}` : "Filter by Driver"}
+                    {driverId === "ALL" ? "All Active Drivers" : drivers.find(d => String(d.id) === driverId) ? `${drivers.find(d => String(d.id) === driverId)?.first_name} ${drivers.find(d => String(d.id) === driverId)?.last_name}` : "Filter by Driver"}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -491,7 +506,7 @@ export default function PostDeliveryAuditModule({ user }: { user?: any }) {
   );
 }
 
-function KPICard({ title, value, icon: Icon, trend, color }: { title: string, value: string | number, icon: any, trend: string, color: string }) {
+function KPICard({ title, value, icon: Icon, trend, color }: { title: string, value: string | number, icon: React.ElementType, trend: string, color: string }) {
   const colorMap: Record<string, string> = {
     primary: "from-primary/20 to-primary/5 text-primary border-primary/10 bg-primary/5",
     emerald: "from-emerald-500/20 to-emerald-500/5 text-emerald-500 border-emerald-500/10 bg-emerald-500/5",

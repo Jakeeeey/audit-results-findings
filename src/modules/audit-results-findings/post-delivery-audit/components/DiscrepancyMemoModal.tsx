@@ -16,16 +16,8 @@ import {
   PopoverContent,
   PopoverTrigger 
 } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Save, X, Receipt, Hash, User, Building2, Wallet } from "lucide-react";
+import { Loader2, Save, X, Receipt, Hash } from "lucide-react";
 import { toast } from "sonner";
 import { ChartOfAccount, Supplier, SalesReturnRecord } from "../types";
 
@@ -34,7 +26,7 @@ interface DiscrepancyMemoModalProps {
   onClose: () => void;
   onSuccess?: () => void;
   invoiceNo: string;
-  user?: any;
+  user?: { id: number | string; [key: string]: unknown };
 }
 
 export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, user }: DiscrepancyMemoModalProps) {
@@ -44,11 +36,17 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
     salesReturns: SalesReturnRecord[];
     suppliers: Supplier[];
     coas: ChartOfAccount[];
-    customer: any;
-    salesmanId: any;
-    existingMemo?: any;
-    invoiceDetails?: any;
-    resolvedSupplier?: any;
+    customer: { id: number; customer_name: string; [key: string]: unknown } | null;
+    salesmanId: number | string | null;
+    existingMemo?: { 
+      memo_number?: string; 
+      supplier_id?: { id: number } | number; 
+      amount?: number; 
+      chart_of_account?: { coa_id: number } | number;
+      reason?: string;
+    } | null;
+    invoiceDetails?: { invoice_no: string; [key: string]: unknown } | null;
+    resolvedSupplier?: { id: number; supplier_name: string; [key: string]: unknown } | null;
     generatedMemoNo?: string;
   } | null>(null);
 
@@ -60,13 +58,11 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
     reason: ""
   });
 
-  useEffect(() => {
-    if (isOpen && invoiceNo) {
-      loadData();
-    }
-  }, [isOpen, invoiceNo]);
+  const [displayCustomer, setDisplayCustomer] = useState<string>("---");
+  const [displaySupplier, setDisplaySupplier] = useState<string>("---");
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
-  const loadData = async () => {
+  const loadData = React.useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/arf/post-delivery-audit?action=memo-data&invoiceNo=${invoiceNo}`);
@@ -76,11 +72,6 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
       const payload = json.data;
       setData(payload);
       
-      // Auto-calculate total SR amount
-      const totalSR = payload.salesReturns.reduce((acc: number, curr: any) => acc + (Number(curr.total_amount) || 0), 0);
-      
-      // DO NOT pre-fill automatically when loading data, keep it blank until SR is clicked
-      // EXCEPT if an existing memo already exists for this invoice context
       if (payload.existingMemo) {
         setFormData({
           memoNumber: payload.existingMemo.memo_number || "",
@@ -92,7 +83,6 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
         setDisplayCustomer(payload.customer?.customer_name || "---");
         setDisplaySupplier(payload.resolvedSupplier?.supplier_name || "---");
       } else {
-        // Reset form and display states for new entry
         setFormData({
           memoNumber: "",
           supplierId: "",
@@ -103,12 +93,18 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
         setDisplayCustomer("---");
         setDisplaySupplier("---");
       }
-    } catch (e: any) {
-      toast.error(e.message || "Failed to load memo data");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Failed to load memo data");
     } finally {
       setLoading(false);
     }
-  };
+  }, [invoiceNo]);
+
+  useEffect(() => {
+    if (isOpen && invoiceNo) {
+      loadData();
+    }
+  }, [isOpen, invoiceNo, loadData]);
 
   const handleSave = async () => {
     if (!formData.memoNumber) return toast.error("Please enter Customer Memo No");
@@ -121,12 +117,11 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "save-memo", // Pass action in body for POST
+          action: "save-memo", 
           ...formData,
           amount: Number(formData.amount),
           customerId: data?.customer?.id || data?.customer,
           salesmanId: data?.salesmanId,
-          memoNumber: formData.memoNumber,
           invoiceNo: invoiceNo,
           userId: user?.id 
         })
@@ -137,45 +132,38 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
       toast.success("Discrepancy Memo saved successfully");
       if (onSuccess) onSuccess();
       onClose();
-    } catch (e: any) {
-      toast.error(e.message || "Failed to save memo");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Failed to save memo");
     } finally {
       setSaving(false);
     }
   };
 
-  const [displayCustomer, setDisplayCustomer] = useState<string>("---");
-  const [displaySupplier, setDisplaySupplier] = useState<string>("---");
-  const [popoverOpen, setPopoverOpen] = useState(false);
-
-  const handleSelectSR = (sr: any) => {
-    // Resolve Supplier from the backend's resolved path
+  const handleSelectSR = (sr: SalesReturnRecord & { supplier_id?: { id: number } | number }) => {
     const supplier = data?.resolvedSupplier;
     const supplierName = supplier?.supplier_name || "N/A";
-    const supplierId = supplier?.id || sr.supplier_id?.id || sr.supplier_id;
+    const supplierId = supplier?.id || (typeof sr.supplier_id === 'object' ? sr.supplier_id?.id : sr.supplier_id);
     
     const resolvedMemoNo = data?.existingMemo?.memo_number || data?.generatedMemoNo || "";
     
     setFormData({
       ...formData,
       memoNumber: resolvedMemoNo, 
-      // Do not pre-fill amount, keep it for manual input
       supplierId: supplierId?.toString() || formData.supplierId,
     });
     
-    const custName = data?.customer?.customer_name || data?.customer?.name || "N/A";
+    const custName = data?.customer?.customer_name || "N/A";
     setDisplayCustomer(custName);
     setDisplaySupplier(supplierName);
     
     toast.info(`Populated from ${sr.return_number}`);
   };
 
-  const totalSRAmount = data?.salesReturns.reduce((acc: number, curr: any) => acc + (Number(curr.total_amount) || 0), 0) || 0;
+  const totalSRAmount = data?.salesReturns.reduce((acc: number, curr: SalesReturnRecord) => acc + (Number(curr.total_amount) || 0), 0) || 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl bg-card border-border shadow-2xl p-0 overflow-hidden flex flex-col h-[600px]">
-        {/* ... Header remains the same ... */}
         <DialogHeader className="p-4 bg-muted/30 border-b border-border shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary">
             <Receipt className="w-5 h-5" />
@@ -195,7 +183,6 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
           </div>
         ) : (
           <div className="flex-1 flex overflow-hidden">
-            {/* Sidebar: SR List */}
             <div className="w-64 border-r border-border bg-muted/10 flex flex-col">
               <div className="p-3 bg-primary text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-between">
                 <span>Sales Returns</span>
@@ -207,7 +194,7 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
                     <div 
                       key={sr.return_id} 
                       className="p-4 border-b border-border/50 hover:bg-muted/30 transition-all group cursor-pointer active:scale-95"
-                      onClick={() => handleSelectSR(sr)}
+                      onClick={() => handleSelectSR(sr as SalesReturnRecord)}
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-black text-foreground uppercase tracking-tight group-hover:text-primary">{sr.return_number}</span>
@@ -227,7 +214,6 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
               </ScrollArea>
             </div>
 
-            {/* Main Form */}
             <ScrollArea className="flex-1 bg-background">
               <div className="p-8">
                 <div className="max-w-md mx-auto space-y-6 pb-8">
@@ -307,14 +293,14 @@ export function DiscrepancyMemoModal({ isOpen, onClose, onSuccess, invoiceNo, us
                             className="bg-transparent border-none outline-none text-[11px] font-bold uppercase w-full placeholder:text-muted-foreground/50"
                             onChange={(e) => {
                               const val = e.target.value.toLowerCase();
-                              // Simple manual filtering logic
                               const items = document.querySelectorAll('.coa-item');
-                              items.forEach((item: any) => {
-                                const text = item.innerText.toLowerCase();
+                              items.forEach((item) => {
+                                const htmlItem = item as HTMLElement;
+                                const text = htmlItem.innerText.toLowerCase();
                                 if (text.includes(val)) {
-                                  item.style.display = 'block';
+                                  htmlItem.style.display = 'block';
                                 } else {
-                                  item.style.display = 'none';
+                                  htmlItem.style.display = 'none';
                                 }
                               });
                             }}
