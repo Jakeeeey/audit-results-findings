@@ -128,13 +128,13 @@ export async function GET(req: NextRequest) {
       // 4. Fetch Chart of Accounts (Try plural then singular fallback)
       let coas = [];
       try {
-        const coaUrlPlural = `${DIRECTUS_URL}/items/chart_of_accounts?fields=*&limit=-1`;
+        const coaUrlPlural = `${DIRECTUS_URL}/items/chart_of_accounts?fields=*&limit=-1&filter[account_type][_in]=7,8,9,10,11`;
         const coaRes = await fetch(coaUrlPlural, { headers: fetchHeaders, cache: "no-store" });
         const coaJson = await coaRes.json();
         coas = coaJson.data || [];
         
         if (coas.length === 0) {
-          const coaUrlSingular = `${DIRECTUS_URL}/items/chart_of_account?fields=*&limit=-1`;
+          const coaUrlSingular = `${DIRECTUS_URL}/items/chart_of_account?fields=*&limit=-1&filter[account_type][_in]=7,8,9,10,11`;
           const coaResSing = await fetch(coaUrlSingular, { headers: fetchHeaders, cache: "no-store" });
           const coaJsonSing = await coaResSing.json();
           coas = coaJsonSing.data || [];
