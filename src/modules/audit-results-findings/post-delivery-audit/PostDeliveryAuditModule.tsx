@@ -32,6 +32,12 @@ import { fetchProvider } from "./providers/fetchProvider";
 import { PostDeliveryAuditRecord, PostDeliveryAuditFilters, AuditDetailRecord } from "./types";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { AuditRemarksModal } from "./components/AuditRemarksModal";
@@ -377,6 +383,7 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
                 <TableHead rowSpan={2} className="text-[10px] font-black uppercase px-8 text-center border-r border-border">Audit Remarks</TableHead>
                 <TableHead colSpan={4} className="text-[10px] font-black uppercase h-10 text-center border-b border-r border-border bg-muted/20">Logistics status metrics</TableHead>
                 <TableHead rowSpan={2} className="text-[10px] font-black uppercase px-6 text-center">Score</TableHead>
+                <TableHead rowSpan={2} className="text-[10px] font-black uppercase px-6 text-center">Actions</TableHead>
               </TableRow>
               <TableRow className="hover:bg-transparent h-14">
                 <TableHead className="text-[9px] font-black uppercase text-center border-r border-border px-4 hover:bg-emerald-500/5 transition-colors cursor-default">Fulfilled</TableHead>
@@ -398,12 +405,13 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
                     <TableCell className="border-r border-border"><Skeleton className="h-5 w-8 mx-auto" /></TableCell>
                     <TableCell className="border-r border-border"><Skeleton className="h-5 w-8 mx-auto" /></TableCell>
                     <TableCell className="border-r border-border"><Skeleton className="h-5 w-8 mx-auto" /></TableCell>
-                    <TableCell><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
+                    <TableCell className="border-r border-border"><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-8 mx-auto rounded-lg" /></TableCell>
                   </TableRow>
                 ))
               ) : data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-[400px] text-center px-8">
+                  <TableCell colSpan={11} className="h-[400px] text-center px-8">
                     <div className="flex flex-col items-center justify-center opacity-30 gap-4 grayscale">
                       <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center animate-pulse">
                         <Search className="h-10 w-10 text-muted-foreground" />
@@ -493,10 +501,43 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
                           </div>
                        </div>
                     </TableCell>
-                    <TableCell className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                       <div className="bg-primary/10 p-1.5 rounded-lg border border-primary/20">
-                          <MoreVertical className="w-4 h-4 text-primary" />
-                       </div>
+                    <TableCell className="text-center px-4">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="w-8 h-8 rounded-lg hover:bg-muted transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 bg-background border-border shadow-xl rounded-xl p-1 z-[100]">
+                          <DropdownMenuItem 
+                            className="text-[10px] font-black uppercase tracking-widest gap-2 cursor-pointer py-3 rounded-lg focus:bg-muted transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRowClick(row);
+                            }}
+                          >
+                            <FileText className="w-4 h-4 text-emerald-500" />
+                            Open Audit
+                          </DropdownMenuItem>
+                          
+                          <DropdownMenuItem 
+                            className="text-[10px] font-black uppercase tracking-widest gap-2 cursor-pointer py-3 rounded-lg focus:bg-muted transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedRow(row);
+                              setRemarksModalOpen(true);
+                            }}
+                          >
+                            <MessageSquare className="w-4 h-4 text-primary" />
+                            Update Remarks
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
