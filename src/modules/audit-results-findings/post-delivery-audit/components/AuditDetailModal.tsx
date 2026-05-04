@@ -42,34 +42,8 @@ import { DiscrepancyMemoModal } from "./DiscrepancyMemoModal";
 import { fetchProvider } from "../providers/fetchProvider";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { AuditDetailRecord, AuditPlanInfo } from "../types";
 
-interface AuditDetailRecord {
-  id: number;
-  status: string;
-  isAudited: boolean;
-  isReceived: boolean;
-  concernId?: number;
-  amount: number;
-  payableAmount?: number;
-  returnedAmount?: number;
-  discrepancyAmount?: number;
-  rejectedAmount?: number;
-  receiptNo: string;
-  invoiceId: number;
-  warehouseRemarks?: string;
-  ntes?: { fileId: string; no: string }[];
-  linkedReturns?: { no: string; amount?: number }[];
-  concern?: { remarks: string };
-}
-
-interface AuditPlanInfo {
-  driver: string;
-  driverId: number;
-  toa: string;
-  docNo: string;
-  driverDepartment: string;
-  helpers: string[];
-}
 
 interface AuditDetailModalProps {
   isOpen: boolean;

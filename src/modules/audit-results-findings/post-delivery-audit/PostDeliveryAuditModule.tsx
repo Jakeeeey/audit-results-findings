@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchProvider } from "./providers/fetchProvider";
-import { PostDeliveryAuditRecord, PostDeliveryAuditFilters } from "./types";
+import { PostDeliveryAuditRecord, PostDeliveryAuditFilters, AuditDetailRecord } from "./types";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -165,7 +165,7 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
     setDetailModalOpen(true);
   };
 
-  const handleAuditSuccess = (updatedDetails: any[]) => {
+  const handleAuditSuccess = (updatedDetails: AuditDetailRecord[]) => {
     if (!selectedRow) return;
 
     // Recalculate based on the same logic as the backend
