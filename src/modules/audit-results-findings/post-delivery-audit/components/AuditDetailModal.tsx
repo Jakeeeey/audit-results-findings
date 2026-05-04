@@ -77,6 +77,7 @@ interface AuditDetailModalProps {
   planId: number;
   dispatchNo: string;
   user?: { id: number | string; name?: string; position?: string; [key: string]: unknown };
+  onSuccess?: (updatedDetails: AuditDetailRecord[]) => void;
 }
 
 export function AuditDetailModal({
@@ -85,6 +86,7 @@ export function AuditDetailModal({
   planId,
   dispatchNo,
   user,
+  onSuccess,
 }: AuditDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -191,6 +193,7 @@ export function AuditDetailModal({
       await fetchProvider.updateInvoices(updates, userId);
       toast.success("Audit records saved successfully");
       setOriginalDetails(JSON.parse(JSON.stringify(details)));
+      onSuccess?.(details);
     } catch (e: unknown) {
       console.error(e);
       toast.error("Failed to save audit records");
@@ -736,7 +739,7 @@ function DetailTable({
                       Generate NTE
                     </ContextMenuItem>
                     
-                    {(type === "with-returns" || (type === "not-fulfilled" && Number(row.returnedAmount) > 0)) && (
+                    {type === "with-returns" && (
                       <ContextMenuItem 
                         className="text-[10px] font-black uppercase tracking-widest gap-2 cursor-pointer py-3"
                         onClick={() => onCreateMemo(row)}

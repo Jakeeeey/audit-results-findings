@@ -152,25 +152,24 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
           { text: "." }
         ], 20, currentY, 170);
 
-        currentY += 2;
-
+        currentY += 1;
         // Paragraph 2 with bold Dispatch and Invoice
         currentY = renderMixedLine([
           { text: "Based on the initial review of the records, you were assigned as the driver for the said transaction involving " },
-          { text: `[${data.dispatchNo}] [${data.invoiceNo}]`, bold: true },
+          { text: `Dispatch No. [${data.dispatchNo}] Invoice No. [${data.invoiceNo}]`, bold: true },
           { text: ". Upon checking of the related documents, collection records, remittance records, and/or delivery accountability, the amount of " },
           { text: `PHP ${data.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, bold: true },
           { text: " appears to be lacking or unaccounted for." }
         ], 20, currentY, 170);
 
-        currentY += 2;
+        currentY += 1;
 
         // Paragraph 3
         const body3 = "Considering that the said amount was connected to your assigned route, delivery, or collection responsibility, you are hereby directed to explain in writing why the said amount is missing, unremitted, or not properly accounted for. You may include in your explanation any relevant details, supporting documents, receipts, acknowledgements, endorsements, or names of persons who may help clarify the matter.";
         const split3 = doc.splitTextToSize(body3, 170);
         doc.setFont("times", "normal");
         doc.text(split3, 20, currentY);
-        currentY += split3.length * 5 + 5;
+        currentY += split3.length * 5 + 4;
 
         // Paragraph 4 with bold "five (5) business days"
         currentY = renderMixedLine([
@@ -179,23 +178,23 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
           { text: " from receipt of this notice. Failure to submit your explanation within the given period may be considered a waiver of your right to be heard, and the company may proceed with its evaluation based on the available records and evidence." }
         ], 20, currentY, 170);
 
-        currentY += 2;
+        currentY += 1;
 
         doc.setFont("times", "italic");
         const bodyText5 = `This Notice to Explain is not yet a disciplinary action. It is issued to give you an opportunity to explain your side before the company makes any final decision regarding the matter.`;
         const splitText5 = doc.splitTextToSize(bodyText5, 170);
         doc.text(splitText5, 20, currentY);
-        currentY += splitText5.length * 5 + 10;
+        currentY += splitText5.length * 5 + 6;
 
         doc.setFont("times", "normal");
         doc.text("For your immediate compliance.", 20, currentY);
-        currentY += 12;
+        currentY += 8;
 
         doc.text("Respectfully,", 20, currentY);
-        currentY += 8;
+        currentY += 6;
         doc.setFont("times", "bold");
         doc.text("Prepared by:", 20, currentY);
-        doc.line(20, currentY + 1, 70, currentY + 1);
+        doc.line(20, currentY + 1, 60, currentY + 1);
         currentY += 6;
         doc.setFont("times", "normal");
         doc.text(`Name: ${data.userName}`, 20, currentY);
@@ -208,22 +207,28 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
         // Signature section
         doc.setFont("times", "bold");
         doc.text("Auditee(s):", 20, currentY);
-        doc.line(20, currentY + 1, 40, currentY + 1);
+        doc.line(20, currentY + 1, 60, currentY + 1);
         currentY += 8;
         
         doc.setFont("times", "normal");
-        if (data.helpers.length > 0) {
-          data.helpers.forEach(helper => {
-            doc.text(`Name: ${helper}`, 20, currentY);
-            currentY += 5;
-            doc.text("Position: Helper", 20, currentY);
-            currentY += 8;
-          });
-        } else {
-          doc.text(`Name: ${data.driverName}`, 20, currentY);
-          currentY += 5;
-          doc.text("Position: Driver", 20, currentY);
-        }
+        const allAuditees = [
+          { name: data.driverName, position: "Driver", department: data.driverDepartment },
+          ...data.helpers.map(h => ({ name: h, position: "Helper", department: data.driverDepartment }))
+        ];
+
+        const baseY = currentY;
+        allAuditees.forEach((auditee, idx) => {
+          const col = idx % 3;
+          const row = Math.floor(idx / 3);
+          const x = 20 + (col * 58);
+          const y = baseY + (row * 18);
+          doc.text(`Name: ${auditee.name}`, x, y);
+          doc.text(`Position: ${auditee.position}`, x, y + 5);
+          doc.text(`Department: ${auditee.department}`, x, y + 10);
+          if (col === 2 || idx === allAuditees.length - 1) {
+            currentY = y + 18;
+          }
+        });
       });
 
       const blob = doc.output("blob");
@@ -334,45 +339,45 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
           { text: data.toa ? format(new Date(data.toa), "yyyy-MM-dd") : "N/A", bold: true },
           { text: "." }
         ], 20, currentY, 170);
-        currentY += 2;
+        currentY += 1;
 
         currentY = renderMixedLine([
           { text: "Based on the initial review of the records, you were assigned as the driver for the said transaction involving " },
-          { text: `[${data.dispatchNo}] [${data.invoiceNo}]`, bold: true },
+          { text: `Dispatch No. [${data.dispatchNo}] Invoice No. [${data.invoiceNo}]`, bold: true },
           { text: ". Upon checking of the related documents, collection records, remittance records, and/or delivery accountability, the amount of " },
           { text: `PHP ${data.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, bold: true },
           { text: " appears to be lacking or unaccounted for." }
         ], 20, currentY, 170);
-        currentY += 2;
+        currentY += 1;
 
         const body3 = "Considering that the said amount was connected to your assigned route, delivery, or collection responsibility, you are hereby directed to explain in writing why the said amount is missing, unremitted, or not properly accounted for. You may include in your explanation any relevant details, supporting documents, receipts, acknowledgements, endorsements, or names of persons who may help clarify the matter.";
         const split3 = doc.splitTextToSize(body3, 170);
         doc.setFont("times", "normal");
         doc.text(split3, 20, currentY);
-        currentY += split3.length * 5 + 5;
+        currentY += split3.length * 5 + 4;
 
         currentY = renderMixedLine([
           { text: "Please submit your written explanation within " },
           { text: "five (5) business days", bold: true },
           { text: " from receipt of this notice. Failure to submit your explanation within the given period may be considered a waiver of your right to be heard, and the company may proceed with its evaluation based on the available records and evidence." }
         ], 20, currentY, 170);
-        currentY += 2;
+        currentY += 1;
 
         doc.setFont("times", "italic");
         const bodyText5 = `This Notice to Explain is not yet a disciplinary action. It is issued to give you an opportunity to explain your side before the company makes any final decision regarding the matter.`;
         const splitText5 = doc.splitTextToSize(bodyText5, 170);
         doc.text(splitText5, 20, currentY);
-        currentY += splitText5.length * 5 + 10;
+        currentY += splitText5.length * 5 + 6;
 
         doc.setFont("times", "normal");
         doc.text("For your immediate compliance.", 20, currentY);
-        currentY += 12;
+        currentY += 8;
 
         doc.text("Respectfully,", 20, currentY);
-        currentY += 8;
+        currentY += 6;
         doc.setFont("times", "bold");
         doc.text("Prepared by:", 20, currentY);
-        doc.line(20, currentY + 1, 70, currentY + 1);
+        doc.line(20, currentY + 1, 60, currentY + 1);
         currentY += 6;
         doc.setFont("times", "normal");
         doc.text(`Name: ${data.userName}`, 20, currentY);
@@ -384,21 +389,27 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
 
         doc.setFont("times", "bold");
         doc.text("Auditee(s):", 20, currentY);
-        doc.line(20, currentY + 1, 40, currentY + 1);
+        doc.line(20, currentY + 1, 60, currentY + 1);
         currentY += 8;
         doc.setFont("times", "normal");
-        if (data.helpers.length > 0) {
-          data.helpers.forEach(helper => {
-            doc.text(`Name: ${helper}`, 20, currentY);
-            currentY += 5;
-            doc.text("Position: Helper", 20, currentY);
-            currentY += 8;
-          });
-        } else {
-          doc.text(`Name: ${data.driverName}`, 20, currentY);
-          currentY += 5;
-          doc.text("Position: Driver", 20, currentY);
-        }
+        const allAuditees = [
+          { name: data.driverName, position: "Driver", department: data.driverDepartment },
+          ...data.helpers.map(h => ({ name: h, position: "Helper", department: data.driverDepartment }))
+        ];
+
+        const baseY = currentY;
+        allAuditees.forEach((auditee, idx) => {
+          const col = idx % 3;
+          const row = Math.floor(idx / 3);
+          const x = 20 + (col * 58);
+          const y = baseY + (row * 18);
+          doc.text(`Name: ${auditee.name}`, x, y);
+          doc.text(`Position: ${auditee.position}`, x, y + 5);
+          doc.text(`Department: ${auditee.department}`, x, y + 10);
+          if (col === 2 || idx === allAuditees.length - 1) {
+            currentY = y + 18;
+          }
+        });
       });
 
       // 2. Upload to Directus & Save to DB

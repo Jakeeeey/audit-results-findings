@@ -165,6 +165,40 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
     setDetailModalOpen(true);
   };
 
+  const handleAuditSuccess = (updatedDetails: any[]) => {
+    if (!selectedRow) return;
+
+    // Recalculate based on the same logic as the backend
+    const totalInvoices = updatedDetails.length;
+    const auditedCount = updatedDetails.filter(d => d.isAudited).length;
+    const receivedCount = updatedDetails.filter(d => d.isReceived).length;
+    
+    // Recalculate logistics counts
+    const fulfilled = updatedDetails.filter(d => d.status === "Fulfilled").length;
+    const notFulfilled = updatedDetails.filter(d => d.status === "Not Fulfilled").length;
+    const withReturns = updatedDetails.filter(d => d.status === "Fulfilled With Returns").length;
+    const withConcerns = updatedDetails.filter(d => d.status === "Fulfilled With Concerns").length;
+
+    // (audited + received) / (total * 2) * 100
+    const percentage = totalInvoices > 0 ? ((auditedCount + receivedCount) / (totalInvoices * 2)) * 100 : 0;
+    const roundedPercentage = Math.round(percentage * 100) / 100;
+
+    setData(prev => prev.map(row => 
+      row.id === selectedRow.id 
+        ? { 
+            ...row, 
+            percentage: roundedPercentage,
+            logisticsStatus: {
+              fulfilled,
+              notFulfilled,
+              withReturns,
+              withConcerns
+            }
+          } 
+        : row
+    ));
+  };
+
   const totals = useMemo(() => {
     return {
       totalDispatches: data.length,
@@ -296,7 +330,7 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
                 </label>
                 <div className="relative group">
                    <Input
-                    placeholder="E.G. PDP-00XXX"
+                    placeholder="E.G. DP-XXX"
                     value={dispatchNo}
                     onChange={(e) => setDispatchNo(e.target.value)}
                     className="bg-background border-border focus-visible:ring-primary/20 h-11 text-xs font-bold uppercase pl-10 transition-all font-mono"
@@ -501,6 +535,7 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
         planId={selectedRow?.id || 0}
         dispatchNo={selectedRow?.dispatchNo || ""}
         user={user}
+        onSuccess={handleAuditSuccess}
       />
     </div>
   );
