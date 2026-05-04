@@ -29,8 +29,15 @@ import {
   Wallet,
   ArrowRightLeft,
   PlusCircle,
-  FileWarning
+  FileWarning,
+  MoreVertical
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -254,6 +261,10 @@ export function AuditDetailModal({
   };
 
   const handleCreateMemo = (row: AuditDetailRecord) => {
+    if (row.status === "Fulfilled With Returns" && (!row.linkedReturns || row.linkedReturns.length === 0)) {
+      toast.error("No linked Sales Return found. Please link a return before creating a Discrepancy Memo.");
+      return;
+    }
     setMemoModal({ isOpen: true, invoiceNo: row.receiptNo });
   };
 
@@ -523,6 +534,9 @@ function DetailTable({
 
             <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-center w-[100px] h-12">Audited</TableHead>
             <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-center w-[100px] h-12">Received</TableHead>
+            {(type === "not-fulfilled" || type === "with-concern" || type === "with-returns") && (
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-center w-[100px] h-12">Actions</TableHead>
+            )}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -700,6 +714,42 @@ function DetailTable({
                         />
                       </div>
                     </TableCell>
+                    {(type === "not-fulfilled" || type === "with-concern" || type === "with-returns") && (
+                      <TableCell className="text-center">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="w-8 h-8 rounded-lg hover:bg-muted transition-colors">
+                              <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56 bg-background border-border shadow-xl rounded-xl p-1 z-[100]">
+                            <DropdownMenuItem 
+                              className="text-[10px] font-black uppercase tracking-widest gap-2 cursor-pointer py-3 rounded-lg focus:bg-muted transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onGenerateNTE(row);
+                              }}
+                            >
+                              <FileWarning className="w-4 h-4 text-rose-500" />
+                              Generate NTE
+                            </DropdownMenuItem>
+                            
+                            {type === "with-returns" && (
+                              <DropdownMenuItem 
+                                className="text-[10px] font-black uppercase tracking-widest gap-2 cursor-pointer py-3 rounded-lg focus:bg-muted transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCreateMemo(row);
+                                }}
+                              >
+                                <PlusCircle className="w-4 h-4 text-primary" />
+                                Create Discrepancy Memo
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    )}
                   </TableRow>
                 </ContextMenuTrigger>
                 
