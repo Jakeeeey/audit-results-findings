@@ -497,6 +497,7 @@ export async function GET(req: NextRequest) {
       if (pdis.length === 0) return NextResponse.json({ data: [] });
 
       const invoiceIds = pdis.map((p: DirectusPDI) => p.invoice_id);
+      console.log(`[AUDIT DEBUG] Invoice IDs to fetch: ${invoiceIds.join(",")}`);
 
       // 2. Fetch Sales Invoices
       const siUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&fields=invoice_id,invoice_no,total_amount,net_amount,discount_amount&filter[invoice_id][_in]=${invoiceIds.join(",")}`;
@@ -504,13 +505,16 @@ export async function GET(req: NextRequest) {
       const siJson = await siRes.json();
       const salesInvoices = siJson.data || [];
 
-      // 3. FULL 5-TABLE JOIN FOR REJECTED AMOUNT (WITH CONCERN)
-      // Path: post_dispatch_invoices -> unfulfilled_sales_transaction -> unfulfilled_sales_transaction_details -> sales_invoice_details
-
-      // Step 3a: Fetch Unfulfilled Sales Transactions for the plan's invoices
-      const ufUrl = `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?limit=-1&fields=id,sales_invoice_id,nte,isCleared,variance_amount,remarks&filter[sales_invoice_id][_in]=${invoiceIds.join(",")}`;
+      // Step 3a: Fetch ALL Unfulfilled Sales Transactions and filter in JS as a robust workaround
+      const ufUrl = `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?limit=-1&fields=*`;
       const ufRes = await fetch(ufUrl, { headers: fetchHeaders, cache: "no-store" });
-      const ufData = (await ufRes.json()).data || [];
+      const allUfData = (await ufRes.json()).data || [];
+      
+      // Filter in JS
+      const ufData = allUfData.filter((u: DirectusUnfulfilled) => {
+        const sid = typeof u.sales_invoice_id === 'object' ? (u.sales_invoice_id as unknown as { id: number }).id : u.sales_invoice_id;
+        return invoiceIds.map(id => Number(id)).includes(Number(sid));
+      });
 
       // Step 3b: Fetch Unfulfilled Sales Transaction Details
       const ufIds = ufData.map((u: DirectusUnfulfilled) => u.id);
@@ -589,12 +593,15 @@ export async function GET(req: NextRequest) {
         // DISCREPANCY calculation (Sum of total_amount from unfulfilled_sales_transaction_details)
         let discrepancySum = 0;
         if (concern) {
-          discrepancySum = ufDetailsData
-            .filter(d => {
-              const uftId = typeof d.unfulfilled_sales_transaction_id === 'object' ? d.unfulfilled_sales_transaction_id?.id : d.unfulfilled_sales_transaction_id;
-              return Number(uftId) === Number(concern.id);
-            })
-            .reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0);
+          const relatedDetails = ufDetailsData.filter(d => {
+            const rawId = d.unfulfilled_sales_transaction_id;
+            const uftId = (rawId && typeof rawId === 'object' && 'id' in rawId) 
+              ? (rawId as { id: number }).id 
+              : rawId;
+            return Number(uftId) === Number(concern.id);
+          });
+          
+          discrepancySum = relatedDetails.reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0);
         }
 
         // Calculation Logic based on Status:

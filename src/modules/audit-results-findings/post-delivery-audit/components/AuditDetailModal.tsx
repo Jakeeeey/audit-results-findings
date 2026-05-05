@@ -517,7 +517,7 @@ function DetailTable({
               <>
                 <TableHead className="text-[10px] font-black uppercase text-muted-foreground h-12 px-6 text-blue-500">Return No</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-muted-foreground h-12 px-6 text-rose-500">NTE NO</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-muted-foreground h-12 px-6">Remarks</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-muted-foreground h-12 px-6">Warehouse Remarks</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-right w-[150px] h-12">Discrepancy</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-right w-[150px] h-12 text-primary">Payable</TableHead>
               </>
@@ -525,7 +525,7 @@ function DetailTable({
             
             {type === "with-concern" && (
               <>
-                <TableHead className="text-[10px] font-black uppercase text-muted-foreground h-12 px-6 text-orange-500">Remarks</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-muted-foreground h-12 px-6 text-orange-500">Warehouse Remarks</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-muted-foreground h-12 px-6 text-rose-500">NTE NO</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-right w-[120px] h-12">Discrepancy</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-right w-[120px] h-12 text-rose-600">Rejected</TableHead>
@@ -665,7 +665,7 @@ function DetailTable({
                     {type === "with-concern" && (
                       <>
                         <TableCell className="px-6 text-xs font-medium text-muted-foreground italic uppercase tracking-tight">
-                          {row.concern?.remarks || "---"}
+                          {row.warehouseRemarks || "---"}
                         </TableCell>
                         <TableCell className="px-6 text-[10px] font-black text-rose-500 uppercase">
                           <div className="flex flex-col gap-1">
