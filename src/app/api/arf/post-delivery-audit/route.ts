@@ -511,8 +511,8 @@ export async function GET(req: NextRequest) {
       const allUfData = (await ufRes.json()).data || [];
       
       // Filter in JS
-      const ufData = allUfData.filter((u: any) => {
-        const sid = typeof u.sales_invoice_id === 'object' ? u.sales_invoice_id?.id : u.sales_invoice_id;
+      const ufData = allUfData.filter((u: DirectusUnfulfilled) => {
+        const sid = typeof u.sales_invoice_id === 'object' ? (u.sales_invoice_id as unknown as { id: number }).id : u.sales_invoice_id;
         return invoiceIds.map(id => Number(id)).includes(Number(sid));
       });
 
@@ -596,7 +596,7 @@ export async function GET(req: NextRequest) {
           const relatedDetails = ufDetailsData.filter(d => {
             const rawId = d.unfulfilled_sales_transaction_id;
             const uftId = (rawId && typeof rawId === 'object' && 'id' in rawId) 
-              ? (rawId as any).id 
+              ? (rawId as { id: number }).id 
               : rawId;
             return Number(uftId) === Number(concern.id);
           });
