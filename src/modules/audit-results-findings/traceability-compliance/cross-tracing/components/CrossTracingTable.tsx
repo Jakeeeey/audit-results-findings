@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
 import { BranchMovementData, ProductMovementRow } from "../types";
 import {
     Table,
@@ -10,12 +11,14 @@ import {
     TableHead,
     TableHeader,
     TableRow
-} from "@/components/ui/table";
+} from "./Table";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronRight, Calculator, Loader2, ListIcon } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, Calculator, Loader2, ListIcon, FileSearch } from "lucide-react";
+import { generateCrossTracingHtml } from "../utils/printCrossTracingReport";
+import { TracingReportPreviewModal } from "../../components/TracingReportPreviewModal";
 import { ConsolidationDispatchTraceRow } from "../types";
 import { fetchConsolidationDispatchTrace } from "../providers/fetchProvider";
 import { toast } from "sonner";
@@ -34,9 +37,9 @@ type Props = {
     valuationDivisor: number;
     costPerUnit: number | null;
     branchBeginningBalances: Record<number, number>;
-    primaryFamilyRunningTotal?: number;
     startDate: string | null;
     endDate: string | null;
+    productName?: string | null;
 };
 
 type UnifiedMovementRow = ProductMovementRow & {
@@ -52,15 +55,17 @@ export function CrossTracingTable({
     valuationDivisor,
     costPerUnit,
     branchBeginningBalances,
-    primaryFamilyRunningTotal,
     startDate,
-    endDate
+    endDate,
+    productName
 }: Props) {
     const [searchQuery, setSearchQuery] = React.useState("");
     const [isBBExpanded, setIsBBExpanded] = React.useState(false);
     const [selectedConsolidationDoc, setSelectedConsolidationDoc] = React.useState<string | null>(null);
     const [traceData, setTraceData] = React.useState<ConsolidationDispatchTraceRow[]>([]);
     const [isTracing, setIsTracing] = React.useState(false);
+    const [previewHtml, setPreviewHtml] = React.useState<string | null>(null);
+    const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
 
     const handleConsolidationClick = async (row: UnifiedMovementRow) => {
         const docNo = row.docNo;
@@ -122,6 +127,10 @@ export function CrossTracingTable({
         let runningBalance = totalBB;
 
         sorted.forEach((m) => {
+            // Skip movements that occurred before the report start date to avoid double-counting
+            const rowDate = new Date(m.ts);
+            if (startDate && rowDate < new Date(startDate)) return;
+
             const isPH = m.docNo.toUpperCase().startsWith("PH") || m.docType?.toUpperCase() === "PHYSICAL INVENTORY";
 
             const phys = m.physical_count !== undefined ? m.physical_count : m.physicalCount;
@@ -159,23 +168,6 @@ export function CrossTracingTable({
 
         const rows = groups;
 
-        // ── Family Balance Consolidation (Correction) ────────────────────────
-        // Compute the delta between movement-derived final balance and the true 
-        // family total from v_running_inventory, then apply it as an offset.
-        if (primaryFamilyRunningTotal && primaryFamilyRunningTotal > 0 && rows.length > 0) {
-            const movementEndBalance = rows[rows.length - 1].runningBalance;
-            const familyDelta = primaryFamilyRunningTotal - movementEndBalance;
-
-            if (Math.abs(familyDelta) >= 1) {
-                rows.forEach(row => {
-                    row.runningBalance += familyDelta;
-                    if (costPerUnit) {
-                        row.grossAmount = (row.runningBalance / valuationDivisor) * costPerUnit;
-                    }
-                });
-            }
-        }
-
         const filtered = rows.filter(r => {
             const rowDate = new Date(r.ts);
             if (startDate && rowDate < new Date(startDate)) return false;
@@ -190,7 +182,7 @@ export function CrossTracingTable({
             (r.docNo || "").toLowerCase().includes(query) ||
             (r.docType || "").toLowerCase().includes(query)
         );
-    }, [data, costPerUnit, valuationDivisor, searchQuery, startDate, endDate, primaryFamilyRunningTotal, branchBeginningBalances]);
+    }, [data, costPerUnit, valuationDivisor, searchQuery, startDate, endDate, branchBeginningBalances]);
 
     const totalBB = React.useMemo(() => {
         return Object.values(branchBeginningBalances).reduce((sum, val) => sum + val, 0);
@@ -199,28 +191,52 @@ export function CrossTracingTable({
     if (data.length === 0 && !isLoading) return null;
 
     return (
-        <Card className="rounded-[2.5rem] border shadow-sm bg-background border-border/40 overflow-hidden">
-            <CardContent className="p-0">
-                <div className="bg-muted/10 px-8 py-6 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                        <h3 className="text-sm font-black uppercase tracking-widest text-foreground/80">Transaction Ledger</h3>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight opacity-60">Beginning balance, posted movements, and ending balance for the selected branches.</p>
+        <>
+            <Card className="rounded-[2.5rem] border shadow-sm bg-background border-border/40">
+                <CardContent className="p-0">
+                    <div className="bg-muted/10 px-8 py-6 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-foreground/80">Transaction Ledger</h3>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight opacity-60">Beginning balance, posted movements, and ending balance for the selected branches.</p>
+                        </div>
+
+                        <div className="relative w-full sm:w-80">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
+                            <Input
+                                placeholder="Search document or reference..."
+                                className="pl-11 h-11 rounded-2xl border-muted-foreground/10 bg-background/50 focus-visible:ring-primary/20 text-sm"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-11 px-6 rounded-2xl border-primary/20 bg-primary/5 hover:bg-primary/10 text-primary font-bold transition-all shadow-sm active:scale-95"
+                            onClick={() => {
+                                const html = generateCrossTracingHtml({
+                                    data,
+                                    unifiedData,
+                                    branchBeginningBalances,
+                                    productName: productName || "Selected Product Family",
+                                    startDate,
+                                    endDate,
+                                    familyDivisor,
+                                    valuationDivisor,
+                                    costPerUnit
+                                });
+                                setPreviewHtml(html);
+                                setIsPreviewOpen(true);
+                            }}
+                        >
+                            <FileSearch className="h-4 w-4 mr-2" />
+                            Preview & Print
+                        </Button>
                     </div>
 
-                    <div className="relative w-full sm:w-80">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
-                        <Input
-                            placeholder="Search document or reference..."
-                            className="pl-11 h-11 rounded-2xl border-muted-foreground/10 bg-background/50 focus-visible:ring-primary/20 text-sm"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                    <Table>
-                        <TableHeader>
+                    <Table noWrapper>
+                        <TableHeader className="bg-background/95 border-b sticky top-0 z-20 backdrop-blur-md shadow-sm">
                             <TableRow className="hover:bg-transparent border-b-2 border-muted/20">
                                 <TableHead className="pl-8 py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Document</TableHead>
                                 <TableHead className="py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Reference No.</TableHead>
@@ -391,7 +407,6 @@ export function CrossTracingTable({
                                         {endDate ? format(new Date(endDate), "MM/dd/yyyy") : "Today"}
                                     </TableCell>
                                     {data.map(branch => {
-                                        // Calculate ending balance for this specific branch
                                         const branchMovementTotal = unifiedData
                                             .reduce((sum, r) => sum + (r.branchMovements?.[branch.branchId] || 0), 0);
                                         const endingBal = ((branchBeginningBalances[branch.branchId] || 0) + branchMovementTotal) / familyDivisor;
@@ -404,20 +419,13 @@ export function CrossTracingTable({
                                             </TableCell>
                                         );
                                     })}
-                                    <TableCell className="py-6 text-right font-black text-lg text-primary tabular-nums tracking-tighter">
-                                        {(unifiedData[unifiedData.length - 1].runningBalance / familyDivisor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
-                                    </TableCell>
-                                    <TableCell className="pr-8 py-6 text-right font-black text-lg text-emerald-700 tabular-nums tracking-tight">
-                                        {unifiedData[unifiedData.length - 1].grossAmount?.toLocaleString(undefined, { style: 'currency', currency: 'PHP' })}
-                                    </TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
                     </Table>
-                </div>
-            </CardContent>
+                </CardContent>
+            </Card>
 
-            {/* Consolidation Dispatches Trace Dialog */}
             <Dialog open={!!selectedConsolidationDoc} onOpenChange={(open) => !open && setSelectedConsolidationDoc(null)}>
                 <DialogContent className="sm:max-w-6xl w-full rounded-[2.5rem] border shadow-2xl p-0 overflow-hidden">
                     <DialogHeader className="p-8 bg-primary/5 border-b">
@@ -506,6 +514,14 @@ export function CrossTracingTable({
                     </div>
                 </DialogContent>
             </Dialog>
-        </Card>
+
+            <TracingReportPreviewModal
+                isOpen={isPreviewOpen}
+                onClose={() => setIsPreviewOpen(false)}
+                html={previewHtml || ""}
+                title="Cross-Branch Tracing Ledger"
+                subtitle={productName || "Selected Product Family"}
+            />
+        </>
     );
 }

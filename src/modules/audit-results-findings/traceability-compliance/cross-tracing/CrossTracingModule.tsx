@@ -6,16 +6,16 @@ import { CrossTracingFilters } from "./components/CrossTracingFilters";
 import { CrossTracingTable } from "./components/CrossTracingTable";
 import { BranchComparisonCards } from "./components/BranchComparisonCards";
 import { CrossTracingSummaryTable } from "./components/CrossTracingSummaryTable";
-import { 
-    fetchBranches, 
-    fetchProductFamilies, 
+import {
+    fetchBranches,
+    fetchProductFamilies,
     fetchCrossMovements,
     fetchPhysicalInventories,
     fetchProductUOMs,
     fetchFamilyRunningInventory
 } from "./providers/fetchProvider";
 import { CrossTracingFiltersType, BranchMovementData, ProductFamilyRow } from "./types";
-import { 
+import {
     GitCompare as CrossTracingIcon,
     Search as TracerSearchIcon,
     BadgeAlert as WarningIcon
@@ -40,7 +40,6 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
     const [physicalInventories, setPhysicalInventories] = React.useState<Array<{ id: number; ph_no: string; starting_date?: string; cutOff_date?: string }>>([]);
     const [uoms, setUoms] = React.useState<string[]>([]);
     const [crossData, setCrossData] = React.useState<BranchMovementData[]>([]);
-    const [primaryFamilyRunningTotal, setPrimaryFamilyRunningTotal] = React.useState<number>(0);
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
@@ -107,16 +106,13 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
             const secondaryBranches = branches.filter(mb => filters.secondary_branch_ids.includes(mb.id));
             const allSelectedBranches = [selectedPrimaryBranch, ...secondaryBranches].filter(Boolean);
 
-            const [data, ...familyTotals] = await Promise.all([
+            const [data] = await Promise.all([
                 fetchCrossMovements(filters),
-                ...allSelectedBranches.map(b => 
+                ...allSelectedBranches.map(b =>
                     fetchFamilyRunningInventory(b!.branch_name, filters.parent_id!)
                 )
             ]);
-            
-            // Sum up the ground-truth running inventory from ALL selected branches
-            const consolidatedFamilyTotal = familyTotals.reduce((sum, val) => sum + (val || 0), 0);
-            
+
             // Map branch names from the master list to ensure accuracy
             const enrichedData = (data || []).map(b => {
                 const masterBranch = branches.find(mb => mb.id === b.branchId);
@@ -127,7 +123,6 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
             });
 
             setCrossData(enrichedData);
-            setPrimaryFamilyRunningTotal(consolidatedFamilyTotal);
             if (enrichedData.length === 0) {
                 toast.info("No movements found for the selected criteria.");
             }
@@ -141,7 +136,7 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
     };
 
     const currentFamily = families.find(f => f.parent_id === filters.parent_id);
-    
+
     // Resolve UOM and Divisor
     const uomInfo = React.useMemo(() => {
         // 1. Build a map of all UOMs found in the data to their conversion counts
@@ -155,7 +150,7 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
                     conversionMap.set(m.unit, m.unitCount);
                     // Also try to capture PI units which might skip unitCount
                     if (m.unitCount === 0 && (m.docNo.startsWith("PH") || m.docType === "Physical Inventory")) {
-                         // PH records usually match the unit names
+                        // PH records usually match the unit names
                     }
                 }
                 if (m.familyUnit && m.familyUnitCount != null) {
@@ -188,7 +183,7 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
     const branchBeginningBalances = React.useMemo(() => {
         const balances: Record<number, number> = {};
         if (!crossData.length || !filters.startDate) return balances;
-        
+
         const start = new Date(filters.startDate);
 
         crossData.forEach(branchData => {
@@ -197,7 +192,7 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
 
             // Find the FIRST PH for this specific branch
             const firstPHIndex = movements.findIndex(m => m.docNo.toUpperCase().startsWith("PH") || m.docType?.toUpperCase() === "PHYSICAL INVENTORY");
-            
+
             if (firstPHIndex === -1) {
                 balances[branchData.branchId] = 0;
                 return;
@@ -206,13 +201,13 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
             // Calculate balance starting from that first PH up to the report startDate
             const history = movements.slice(firstPHIndex);
             let balance = 0;
-            
+
             history.forEach((m, idx) => {
                 const rowDate = new Date(m.ts);
                 if (rowDate >= start) return;
 
                 const isPH = m.docNo.toUpperCase().startsWith("PH") || m.docType?.toUpperCase() === "PHYSICAL INVENTORY";
-                
+
                 // For PI records, use m.unitCount if valid, otherwise fallback to the family standard (valuationDivisor)
                 const effectiveUnitCount = (m.unitCount && m.unitCount > 0) ? m.unitCount : (isPH ? uomInfo.valuationDivisor : 1);
 
@@ -284,7 +279,7 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
                                 <p className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Comparative metrics per location</p>
                             </div>
                         </div>
-                        <BranchComparisonCards 
+                        <BranchComparisonCards
                             data={crossData}
                             familyDivisor={familyDivisor}
                             familyUnitName={familyUnitName}
@@ -299,7 +294,7 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
                                 <p className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Physical inventory audit trail</p>
                             </div>
                         </div>
-                        <CrossTracingSummaryTable 
+                        <CrossTracingSummaryTable
                             data={crossData}
                             familyDivisor={familyDivisor}
                             familyUnitName={familyUnitName}
@@ -309,7 +304,6 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
                             valuationDivisor={valuationDivisor}
                             beginningBaseBalance={totalBeginningBalance}
                             branchBeginningBalances={branchBeginningBalances}
-                            primaryFamilyRunningTotal={primaryFamilyRunningTotal}
                         />
                     </div>
 
@@ -328,9 +322,9 @@ export const CrossTracingModule = React.forwardRef<HTMLDivElement, React.HTMLAtt
                             valuationDivisor={valuationDivisor}
                             costPerUnit={currentFamily?.cost_per_unit || null}
                             branchBeginningBalances={branchBeginningBalances}
-                            primaryFamilyRunningTotal={primaryFamilyRunningTotal}
                             startDate={filters.startDate}
                             endDate={filters.endDate}
+                            productName={families.find(f => f.parent_id === filters.parent_id)?.product_name}
                         />
                     </div>
                 </div>
