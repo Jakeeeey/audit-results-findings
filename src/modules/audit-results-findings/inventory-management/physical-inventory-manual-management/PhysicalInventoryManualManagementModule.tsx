@@ -67,6 +67,7 @@ import {
     Boxes,
     ClipboardList,
     Loader2,
+    Printer,
     RefreshCcw,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -76,6 +77,7 @@ import {
     PhysicalInventoryHeader,
     PhysicalInventoryTable,
 } from "./components";
+import { printAuditSheet } from "../physical-inventory-management/utils/printAuditSheet";
 
 type Props = {
     initialHeaderId?: number | null;
@@ -1258,6 +1260,28 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                         >
                             <Ban className="mr-2 h-4 w-4" />
                             Cancel
+                        </Button>
+
+                        <Button
+                            variant="outline"
+                            className="cursor-pointer border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+                            onClick={() => {
+                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
+                                
+                                printAuditSheet({
+                                    header,
+                                    groupedRows,
+                                    branchName: bName,
+                                    supplierName: sName,
+                                    priceTypeName: pName,
+                                });
+                            }}
+                            disabled={!hasLoadedDetails}
+                        >
+                            <Printer className="mr-2 h-4 w-4" />
+                            Print Audit Sheet
                         </Button>
                     </div>
                 </div>

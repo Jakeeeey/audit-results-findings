@@ -130,6 +130,8 @@ export function buildGroupedPhysicalInventoryRows(
             const differenceCost = computeDifferenceCost(variance, variant.unit_price);
             const amount = computeAmount(physicalCount, variant.unit_price);
 
+            const brandName = variant.brand_name ?? matchedRunning?.product_brand ?? null;
+
             return {
                 family_key: familyKey,
                 product_id: variant.product_id,
@@ -149,6 +151,7 @@ export function buildGroupedPhysicalInventoryRows(
                 unit_count: unitCount,
 
                 unit_price: variant.unit_price,
+                cost_per_unit: variant.cost_per_unit,
 
                 detail_id: detailId,
                 ph_id: detail?.ph_id ?? ph_id,
@@ -162,6 +165,7 @@ export function buildGroupedPhysicalInventoryRows(
 
                 requires_rfid: isRfidRow,
                 rfid_count: rfidCount,
+                brand_name: brandName,
             };
         });
 
@@ -172,6 +176,7 @@ export function buildGroupedPhysicalInventoryRows(
             base_product_code: baseVariant.product_code,
             base_barcode: baseVariant.barcode,
             category_name: baseVariant.category_name,
+            brand_name: childRows[0]?.brand_name ?? null,
 
             total_system_count_base: childRows.reduce(
                 (acc, row) => acc + row.system_count * row.unit_count,

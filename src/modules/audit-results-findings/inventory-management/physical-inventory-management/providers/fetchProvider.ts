@@ -472,6 +472,7 @@ export function buildEligibleVariants(input: {
                 unit_count: normalizeUnitCount(product.unit_of_measurement_count),
                 unit_price: priceRow?.price ?? null,
                 cost_per_unit: product.cost_per_unit,
+                brand_name: null,
             };
         })
         .sort((a, b) => {
@@ -847,6 +848,7 @@ export function buildVariantsFromSavedDetails(input: {
                 unit_count: normalizeUnitCount(product.unit_of_measurement_count),
                 unit_price: detail?.unit_price ?? priceRow?.price ?? null,
                 cost_per_unit: product.cost_per_unit,
+                brand_name: null,
             };
         })
         .sort((a, b) => {
