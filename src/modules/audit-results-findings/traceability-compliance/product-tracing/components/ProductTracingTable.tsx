@@ -11,14 +11,16 @@ import {
     TableHead,
     TableHeader,
     TableRow
-} from "@/components/ui/table";
+} from "./Table";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProductMovementRow, ConsolidationDispatchTraceRow } from "../types";
 import { fetchConsolidationDispatchTrace } from "../providers/fetchProvider";
 import { toast } from "sonner";
-import { Loader2, ArrowUpDown, ChevronUp, ChevronDown, Layout, Columns } from "lucide-react";
+import { Loader2, ArrowUpDown, ChevronUp, ChevronDown, Layout, Columns, FileSearch } from "lucide-react";
+import { generateProductTracingHtml } from "../utils/printProductTracingReport";
+import { TracingReportPreviewModal } from "../../components/TracingReportPreviewModal";
 
 import {
     Dialog,
@@ -37,9 +39,27 @@ type Props = React.HTMLAttributes<HTMLDivElement> & {
     costPerUnit: number | null;
     beginningBaseBalance?: number;
     familyRunningTotal?: number;
+    branchName?: string | null;
+    productName?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
 };
 
-export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({ data, isLoading, familyDivisor, familyUnitName, costPerUnit, beginningBaseBalance, familyRunningTotal, className, ...props }, ref) => {
+export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({
+    data,
+    isLoading,
+    familyDivisor,
+    familyUnitName,
+    costPerUnit,
+    beginningBaseBalance,
+    familyRunningTotal,
+    branchName,
+    productName,
+    startDate,
+    endDate,
+    className,
+    ...props
+}, ref) => {
     const [selectedDocNo, setSelectedDocNo] = React.useState<string | null>(null);
     const [selectedConsolidationDoc, setSelectedConsolidationDoc] = React.useState<string | null>(null);
     const [traceData, setTraceData] = React.useState<ConsolidationDispatchTraceRow[]>([]);
@@ -49,6 +69,8 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({ da
         key: 'ts',
         direction: 'asc'
     });
+    const [previewHtml, setPreviewHtml] = React.useState<string | null>(null);
+    const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
 
     const handleSort = (key: string) => {
         setSortConfig(current => {
@@ -330,7 +352,7 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({ da
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-end pr-2">
+            <div className="flex justify-end pr-2 gap-2">
                 <Button
                     variant="outline"
                     size="sm"
@@ -352,11 +374,40 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({ da
                         </>
                     )}
                 </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 rounded-xl border-primary/20 bg-primary/5 hover:bg-primary/10 text-primary font-bold transition-all shadow-sm active:scale-95"
+                    onClick={() => {
+                        const printableMovements = sortedGroupedRows.map(g => ({
+                            ...g.main,
+                            isGroup: g.isGroup,
+                            itemCount: g.items.length
+                        }));
+
+                        const html = generateProductTracingHtml({
+                            movements: printableMovements,
+                            beginningBalance: beginningBaseBalance || 0,
+                            branchName: branchName || "Selected Branch",
+                            productName: productName || "Selected Product",
+                            startDate: (startDate ?? null) as string | null,
+                            endDate: (endDate ?? null) as string | null,
+                            uniqueUOMs: uniqueUOMs,
+                            showQtyBase: showMainUnits,
+                            familyDivisor: familyDivisor || 1
+                        });
+                        setPreviewHtml(html);
+                        setIsPreviewOpen(true);
+                    }}
+                >
+                    <FileSearch className="h-4 w-4 mr-2" />
+                    Preview & Print
+                </Button>
             </div>
 
-            <Card ref={ref} className={cn("rounded-[2rem] border shadow-sm overflow-hidden bg-background/50 backdrop-blur-sm", className)} {...props}>
-                <Table>
-                    <TableHeader className="bg-muted/40 border-b">
+            <Card ref={ref} className={cn("rounded-[2rem] border shadow-sm bg-background/50 backdrop-blur-sm", className)} {...props}>
+                <Table noWrapper>
+                    <TableHeader className="bg-background/95 border-b sticky top-0 z-20 backdrop-blur-md shadow-sm">
                         <TableRow className="hover:bg-transparent">
                             <TableHead
                                 className="w-[120px] h-12 text-[10px] font-bold uppercase tracking-widest pl-6 cursor-pointer group select-none"
@@ -704,9 +755,15 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({ da
                     </DialogContent>
                 </Dialog>
             </Card>
+            <TracingReportPreviewModal
+                isOpen={isPreviewOpen}
+                onClose={() => setIsPreviewOpen(false)}
+                html={previewHtml || ""}
+                title="Product Movement Ledger"
+                subtitle={productName || "Selected Product Family"}
+            />
         </div>
     );
 });
 
 ProductTracingTable.displayName = "ProductTracingTable";
-

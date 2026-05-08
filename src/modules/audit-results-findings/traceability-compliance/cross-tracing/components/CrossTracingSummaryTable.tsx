@@ -11,7 +11,7 @@ import {
     TableHead,
     TableHeader,
     TableRow
-} from "@/components/ui/table";
+} from "./Table";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, Calculator, Building2 } from "lucide-react";
 import {
@@ -32,7 +32,6 @@ type Props = {
     endDate: string | null;
     beginningBaseBalance: number;
     branchBeginningBalances: Record<number, number>;
-    primaryFamilyRunningTotal?: number;
 };
 
 type SummaryRow = {
@@ -54,11 +53,13 @@ export function CrossTracingSummaryTable({
     startDate,
     endDate,
     beginningBaseBalance,
-    branchBeginningBalances,
-    primaryFamilyRunningTotal
+    branchBeginningBalances
 }: Props) {
     const tableData = React.useMemo(() => {
         if (data.length === 0) return [];
+
+        const start = startDate ? new Date(startDate) : null;
+        const end = endDate ? new Date(endDate) : null;
 
         // 1. Accumulate all movements across all branches (not just PI)
         const allMovements: (ProductMovementRow & { branchId: number; branchName: string })[] = [];
@@ -82,6 +83,10 @@ export function CrossTracingSummaryTable({
         let cumulativeTotal = beginningBaseBalance || 0;
 
         sorted.forEach((m) => {
+            // Skip movements that occurred before the report start date to avoid double-counting
+            const rowDate = new Date(m.ts);
+            if (start && rowDate < start) return;
+
             const isPH = m.docNo.toUpperCase().startsWith("PH") || m.docType?.toUpperCase() === "PHYSICAL INVENTORY";
             
             const phys = m.physical_count !== undefined ? m.physical_count : m.physicalCount;
@@ -125,27 +130,7 @@ export function CrossTracingSummaryTable({
             }
         });
 
-        // ── Family Balance Consolidation (Correction) ────────────────────────
-        // Apply delta to summary total if provided, synchronized with ledger
-        if (primaryFamilyRunningTotal && primaryFamilyRunningTotal > 0 && groups.length > 0) {
-            const movementEndBalance = cumulativeTotal;
-            const familyDelta = primaryFamilyRunningTotal - movementEndBalance;
-
-            if (Math.abs(familyDelta) >= 1) {
-                groups.forEach(row => {
-                    row.total += familyDelta;
-                    row.beginningBalance += familyDelta;
-                    if (costPerUnit) {
-                        row.grossAmount = (row.total / valuationDivisor) * costPerUnit;
-                    }
-                });
-            }
-        }
-
         // 4. Final display filtering
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-
         const filtered = groups.filter(r => {
             const d = new Date(r.date);
             if (start && d < start) return false;
@@ -158,12 +143,12 @@ export function CrossTracingSummaryTable({
             ...r,
             isBeginning: i === 0
         }));
-    }, [data, costPerUnit, startDate, endDate, beginningBaseBalance, primaryFamilyRunningTotal, valuationDivisor]);
+    }, [data, costPerUnit, startDate, endDate, beginningBaseBalance, valuationDivisor]);
 
     if (data.length === 0) return null;
 
     return (
-        <Card className="rounded-[2rem] border shadow-sm bg-background/50 backdrop-blur-sm border-border/40 overflow-hidden">
+        <Card className="rounded-[2rem] border shadow-sm bg-background/50 backdrop-blur-sm border-border/40">
             <CardContent className="p-0">
                 <div className="bg-muted/30 px-8 py-5 border-b flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground/60">Inventory Summary Matrix</span>
@@ -171,9 +156,8 @@ export function CrossTracingSummaryTable({
                         {familyUnitName} based
                     </Badge>
                 </div>
-                <div className="overflow-x-auto">
-                    <Table>
-                        <TableHeader>
+                <Table noWrapper>
+                    <TableHeader className="bg-background/95 border-b sticky top-0 z-20 backdrop-blur-md shadow-sm">
                             <TableRow className="hover:bg-transparent border-b-2 border-muted/20">
                                 <TableHead className="pl-8 py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Date</TableHead>
                                 <TableHead className="py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 text-center">Physical Count No.</TableHead>
@@ -335,8 +319,7 @@ export function CrossTracingSummaryTable({
                             ))}
                         </TableBody>
                     </Table>
-                </div>
-            </CardContent>
+                </CardContent>
         </Card>
     );
 }
