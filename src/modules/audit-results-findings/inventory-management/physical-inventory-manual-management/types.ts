@@ -69,6 +69,7 @@ export type ProductRow = {
     unit_of_measurement_count: number | null;
 
     isActive: number;
+    cost_per_unit: number | null;
 };
 
 export type ProductPerSupplierRow = {
@@ -240,6 +241,8 @@ export type EligibleVariantRow = {
     unit_count: number;
 
     unit_price: number | null;
+    cost_per_unit: number | null;
+    brand_name: string | null;
 };
 
 export type GroupedPhysicalInventoryChildRow = {
@@ -261,6 +264,7 @@ export type GroupedPhysicalInventoryChildRow = {
     unit_count: number;
 
     unit_price: number | null;
+    cost_per_unit: number | null;
 
     detail_id: number | null;
     ph_id: number | null;
@@ -274,6 +278,7 @@ export type GroupedPhysicalInventoryChildRow = {
 
     requires_rfid: boolean;
     rfid_count: number;
+    brand_name: string | null;
 };
 
 export type GroupedPhysicalInventoryRow = {
@@ -283,6 +288,7 @@ export type GroupedPhysicalInventoryRow = {
     base_product_code: string | null;
     base_barcode: string | null;
     category_name: string | null;
+    brand_name: string | null;
 
     total_system_count_base: number;
     total_physical_count_base: number;

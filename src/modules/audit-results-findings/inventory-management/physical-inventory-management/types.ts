@@ -242,6 +242,7 @@ export type EligibleVariantRow = {
 
     unit_price: number | null;
     cost_per_unit: number | null;
+    brand_name: string | null;
 };
 
 export type GroupedPhysicalInventoryChildRow = {
@@ -277,6 +278,7 @@ export type GroupedPhysicalInventoryChildRow = {
 
     requires_rfid: boolean;
     rfid_count: number;
+    brand_name: string | null;
 };
 
 export type GroupedPhysicalInventoryRow = {
@@ -286,6 +288,7 @@ export type GroupedPhysicalInventoryRow = {
     base_product_code: string | null;
     base_barcode: string | null;
     category_name: string | null;
+    brand_name: string | null;
 
     total_system_count_base: number;
     total_physical_count_base: number;

@@ -207,17 +207,27 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
             }
         });
 
-        return {
-            totalInBase,
-            totalOutBase,
-            netChangeBase,
-            breakdown,
-            beginningBaseBalance,
-            filtered,
-            divisor: divisor || 1,
-            unit: validMovements.find(r => r.unitCount === (divisor || 1))?.unit || validMovements[0]?.familyUnit || "Box"
-        };
-    }, [movements, filters.startDate, filters.endDate, filters.branch_id, filters.parent_id]);
+        const isLiveRange = (() => {
+            if (filters.dateRangeMode === 'ph') return false;
+            if (!filters.endDate) return true;
+            const end = new Date(filters.endDate);
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            return end.getTime() >= startOfToday;
+        })();
+
+    return {
+        totalInBase,
+        totalOutBase,
+        netChangeBase,
+        breakdown,
+        beginningBaseBalance,
+        filtered,
+        divisor: divisor || 1,
+        unit: validMovements.find(r => r.unitCount === (divisor || 1))?.unit || validMovements[0]?.familyUnit || "Box",
+        isLiveRange
+    };
+}, [movements, filters.startDate, filters.endDate, filters.branch_id, filters.parent_id, filters.dateRangeMode]);
 
     const currentUnit = stats?.unit || "Units";
     const currentDivisor = stats?.divisor || 1;
@@ -261,7 +271,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                             baseUnitDivisor={currentDivisor}
                             costPerUnit={families.find(f => f.parent_id === filters.parent_id)?.cost_per_unit || null}
                             beginningBaseBalance={stats.beginningBaseBalance || 0}
-                            familyRunningTotal={filters.dateRangeMode === "manual" ? familyRunningTotal : undefined}
+                            familyRunningTotal={stats.isLiveRange ? familyRunningTotal : undefined}
                         />
                     )}
 
@@ -279,7 +289,11 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                             familyUnitName={stats.unit || "Box"}
                             costPerUnit={families.find(f => f.parent_id === filters.parent_id)?.cost_per_unit || null}
                             beginningBaseBalance={stats.beginningBaseBalance || 0}
-                            familyRunningTotal={filters.dateRangeMode === "manual" ? familyRunningTotal : undefined}
+                            familyRunningTotal={stats.isLiveRange ? familyRunningTotal : undefined}
+                            branchName={branches.find(b => b.id === filters.branch_id)?.branch_name}
+                            productName={families.find(f => f.parent_id === filters.parent_id)?.product_name}
+                            startDate={filters.startDate}
+                            endDate={filters.endDate}
                         />
                     </div>
                 </div>
