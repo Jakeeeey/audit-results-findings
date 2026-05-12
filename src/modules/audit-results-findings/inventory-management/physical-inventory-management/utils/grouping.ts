@@ -47,7 +47,14 @@ function buildRunningInventoryMap(
     const map = new Map<string, RunningInventoryRow>();
 
     for (const row of rows) {
-        map.set(`${row.branch_id}-${row.product_id}`, row);
+        const key = `${row.branch_id}-${row.product_id}`;
+        const existing = map.get(key);
+
+        if (existing) {
+            existing.running_inventory = (existing.running_inventory ?? 0) + (row.running_inventory ?? 0);
+        } else {
+            map.set(key, { ...row });
+        }
     }
 
     return map;

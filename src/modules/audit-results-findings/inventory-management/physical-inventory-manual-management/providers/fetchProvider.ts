@@ -479,15 +479,20 @@ export async function fetchRunningInventoryByBranch(
     return Array.isArray(rows) ? rows.map(mapRunningInventoryRow) : [];
 }
 
-export async function fetchRunningInventoryFiltered(input: {
+export type RunningInventoryFilterInput = {
     branchName: string;
-    supplierShortcut: string;
+    supplierShortcut?: string;
     productCategory?: string;
-}): Promise<RunningInventoryRow[]> {
+};
+
+export async function fetchRunningInventoryFiltered(input: RunningInventoryFilterInput): Promise<RunningInventoryRow[]> {
     const params: Record<string, string> = {
         branchName: input.branchName,
-        supplierShortcut: input.supplierShortcut,
     };
+
+    if (input.supplierShortcut && input.supplierShortcut.trim()) {
+        params.supplierShortcut = input.supplierShortcut.trim();
+    }
 
     if (input.productCategory && input.productCategory.trim()) {
         params.productCategory = input.productCategory.trim();
@@ -852,25 +857,20 @@ export async function prepareLoadProductsData(input: {
 
 export function resolveRunningInventoryFilterParams(input: {
     branchId: number;
-    supplierId: number;
+    supplierId?: number | null;
     categoryId: number;
     branches: BranchRow[];
     suppliers: SupplierRow[];
     lookup: ProductLookupBundle;
-}): {
-    branchName: string;
-    supplierShortcut: string;
-    productCategory?: string;
-} {
+}): RunningInventoryFilterInput {
     const branch = input.branches.find((row) => row.id === input.branchId);
     if (!branch?.branch_name?.trim()) {
         throw new Error("Unable to resolve branch name for running inventory filter.");
     }
 
-    const supplier = input.suppliers.find((row) => row.id === input.supplierId);
-    if (!supplier?.supplier_shortcut?.trim()) {
-        throw new Error("Unable to resolve supplier shortcut for running inventory filter.");
-    }
+    const supplier = input.supplierId
+        ? input.suppliers.find((row) => row.id === input.supplierId)
+        : null;
 
     const category = input.lookup.categories.find(
         (row) => row.category_id === input.categoryId,
@@ -883,7 +883,9 @@ export function resolveRunningInventoryFilterParams(input: {
 
     return {
         branchName: branch.branch_name.trim(),
-        supplierShortcut: supplier.supplier_shortcut.trim(),
+        ...(supplier?.supplier_shortcut?.trim()
+            ? { supplierShortcut: supplier.supplier_shortcut.trim() }
+            : {}),
         ...(isAllCategory ? {} : { productCategory: category.category_name.trim() }),
     };
 }
