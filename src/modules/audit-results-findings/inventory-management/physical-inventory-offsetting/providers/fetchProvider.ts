@@ -186,6 +186,7 @@ export async function loadPhysicalInventoryOffsettingSnapshot(
         runningInventoryRows,
         ph_id: header.id,
         rfidCountByDetailId,
+        ignoreRfid: true,
     });
 
     const flattenedRows = groupedRows.flatMap((group) => group.rows);

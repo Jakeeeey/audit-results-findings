@@ -38,6 +38,13 @@ function fmtNumber(value: number): string {
     });
 }
 
+function fmtVariance(value: number): string {
+    if (value < 0) {
+        return `(${fmtNumber(Math.abs(value))})`;
+    }
+    return fmtNumber(value);
+}
+
 function fmtDate(value: string | null): string {
     if (!value) return "-";
 
@@ -58,6 +65,12 @@ function sumRowAmounts(rows: OffsettingSelectableRow[]): number {
 }
 
 function moneyCell(value: number, variant: "default" | "offset" = "default"): string {
+    if (value === 0) {
+        return `
+            <span class="money money-default" style="color: var(--muted); opacity: 0.6;">—</span>
+        `;
+    }
+
     if (variant === "offset") {
         return `
             <span class="money money-offset">
@@ -72,18 +85,32 @@ function moneyCell(value: number, variant: "default" | "offset" = "default"): st
 }
 
 function renderFindingsRow(row: OffsettingSelectableRow): string {
-    const varianceValue = Math.abs(row.variance_base ?? row.variance ?? 0);
+    const varianceValue = row.variance_base ?? row.variance ?? 0;
     const diffCost = Math.abs(row.difference_cost ?? 0);
 
     return `
         <tr>
+            <td>${escapeHtml(row.brand_name || "—")}</td>
+            <td>${escapeHtml(row.category_name || "—")}</td>
             <td class="findings-product-cell">
                 <div class="wrap-text">
                     ${escapeHtml(row.product_label)}
                 </div>
             </td>
-            <td>${escapeHtml(String(row.detail_id || row.product_id))}</td>
-            <td class="text-right number">${fmtNumber(varianceValue)}</td>
+            <td>${escapeHtml(row.unit_shortcut || row.unit_name || "—")}</td>
+            <td class="text-right number">${fmtNumber(row.unit_count)}</td>
+            <td class="text-center audit-cell">
+                <div class="audit-grid">
+                    <div class="audit-counts">
+                        <div class="audit-system"><span class="audit-label">SC</span>${fmtNumber(row.system_count * row.unit_count)}</div>
+                        <div class="audit-divider"></div>
+                        <div class="audit-physical"><span class="audit-label">PC</span>${fmtNumber(row.physical_count * row.unit_count)}</div>
+                    </div>
+                    <div class="audit-variance">
+                        ${fmtVariance(varianceValue)}
+                    </div>
+                </div>
+            </td>
             <td class="text-right">${moneyCell(diffCost, "default")}</td>
             <td class="text-right">${moneyCell(row.selection_amount, "default")}</td>
         </tr>
@@ -107,17 +134,17 @@ function renderFindingsSectionRows(
     let html = "";
 
     // --- Not Offset sub-group ---
-    html += `<tr class="subgroup-header"><td colspan="5">Not Offset</td></tr>`;
+    html += `<tr class="subgroup-header"><td colspan="8">Not Offset</td></tr>`;
     if (notOffsetRows.length === 0) {
-        html += `<tr><td colspan="5" class="empty-cell">No records found.</td></tr>`;
+        html += `<tr><td colspan="8" class="empty-cell">No records found.</td></tr>`;
     } else {
         html += notOffsetRows.map(renderFindingsRow).join("");
     }
 
     // --- Offset Products sub-group ---
-    html += `<tr class="subgroup-header"><td colspan="5">Offset Products</td></tr>`;
+    html += `<tr class="subgroup-header"><td colspan="8">Offset Products</td></tr>`;
     if (offsetRows.length === 0) {
-        html += `<tr><td colspan="5" class="empty-cell">No records found.</td></tr>`;
+        html += `<tr><td colspan="8" class="empty-cell">No records found.</td></tr>`;
     } else {
         html += offsetRows.map(renderFindingsRow).join("");
     }
@@ -227,13 +254,17 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             padding: 0;
             color: var(--text);
             font-family: Arial, Helvetica, sans-serif;
-            font-size: 12px;
-            line-height: 1.45;
+            font-size: 10.5px;
+            line-height: 1.3;
             background: #ffffff;
         }
 
         body {
-            padding: 24px 28px 32px;
+            padding: 24px 28px 48px; /* Increased bottom padding for footer */
+        }
+
+        .print-footer {
+            display: none;
         }
 
         .report-header {
@@ -296,7 +327,7 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         .detail-line {
             display: flex;
             gap: 8px;
-            padding: 3px 0;
+            padding: 2px 0;
             border-bottom: 1px dotted #e5e7eb;
         }
 
@@ -323,7 +354,7 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
 
         .summary-table td {
             border: 1px solid var(--border);
-            padding: 8px 10px;
+            padding: 6px 8px;
             vertical-align: top;
         }
 
@@ -363,7 +394,7 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
 
         th, td {
             border: 1px solid var(--border);
-            padding: 7px 8px;
+            padding: 4px 6px;
             vertical-align: top;
         }
 
@@ -383,6 +414,9 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             table-layout: fixed;
         }
 
+.text-center {
+    text-align: center;
+}
 .text-right {
     text-align: right;
     white-space: nowrap;
@@ -454,7 +488,7 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         }
 
         .findings-product-cell {
-            min-width: 320px;
+            min-width: 280px;
         }
 
         .subgroup-header td {
@@ -502,7 +536,7 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 18px;
-            margin-top: 48px;
+            margin-top: 32px;
         }
 
         .signoff-box {
@@ -526,10 +560,56 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             margin-top: 4px;
         }
 
-        .w-id { width: 10%; }
-        .w-var { width: 11%; }
-        .w-diff { width: 15%; }
-        .w-amount { width: 16%; }
+        .w-brand { width: 9%; }
+        .w-cat { width: 9%; }
+        .w-uom { width: 4%; }
+        .w-baseqty { width: 5%; }
+        .w-merged { width: 10%; }
+        .w-diff { width: 10%; }
+        .w-amount { width: 10%; }
+
+        .audit-cell {
+            padding: 0 !important;
+            height: 1px; /* Trick to allow 100% height in children */
+        }
+        .audit-grid {
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            height: 100%;
+            width: 100%;
+        }
+        .audit-counts {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
+            padding: 4px 0;
+            flex: 1;
+        }
+        .audit-divider {
+            width: 100%;
+            border-top: 1px solid #999;
+            margin: 0;
+        }
+        .audit-variance {
+            border-left: 1px solid #999;
+            padding: 0 8px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            font-weight: 700;
+            min-width: 42px;
+        }
+        .audit-system { color: var(--muted); font-size: 8.5px; padding-right: 8px; line-height: 1.2; }
+        .audit-physical { font-weight: normal; padding-right: 8px; line-height: 1.2; }
+        .audit-label {
+            font-size: 7.5px;
+            color: var(--muted);
+            margin-right: 3px;
+            font-weight: normal;
+            font-variant-caps: all-small-caps;
+        }
 
         .w-offset { width: 13%; }
         .w-shortrows { width: 18%; }
@@ -540,7 +620,25 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
 
         @media print {
             body {
-                padding: 16px 18px 20px;
+                padding: 16px 18px 40px;
+            }
+
+            .print-footer {
+                display: block;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                text-align: center;
+                font-size: 9px;
+                color: var(--muted);
+                padding: 10px 0;
+                background: white;
+                border-top: 1px solid var(--border);
+            }
+
+            .page-number:after {
+                content: "Page " counter(page);
             }
 
             .section,
@@ -609,7 +707,7 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
                     <div class="detail-value">${escapeHtml(header.remarks || "-")}</div>
                 </div>
                 <div class="detail-line">
-                    <div class="detail-label">Record ID</div>
+                    <div class="detail-label">PH NO</div>
                     <div class="detail-value">${escapeHtml(header.ph_no || String(header.id))}</div>
                 </div>
             </div>
@@ -664,9 +762,12 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         <table class="findings-table">
             <thead>
                 <tr>
+                    <th class="w-brand">Brand</th>
+                    <th class="w-cat">Category</th>
                     <th>Product</th>
-                    <th class="w-id">Detail ID</th>
-                    <th class="w-var text-right">Variance</th>
+                    <th class="w-uom">UOM</th>
+                    <th class="w-baseqty text-right">Base Qty</th>
+                    <th class="w-merged text-center">Audit / Variance</th>
                     <th class="w-diff text-right">Diff Cost</th>
                     <th class="w-amount text-right">Short Amount</th>
                 </tr>
@@ -682,9 +783,12 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         <table class="findings-table">
             <thead>
                 <tr>
+                    <th class="w-brand">Brand</th>
+                    <th class="w-cat">Category</th>
                     <th>Product</th>
-                    <th class="w-id">Detail ID</th>
-                    <th class="w-var text-right">Variance</th>
+                    <th class="w-uom">UOM</th>
+                    <th class="w-baseqty text-right">Base Qty</th>
+                    <th class="w-merged text-center">Audit / Variance</th>
                     <th class="w-diff text-right">Diff Cost</th>
                     <th class="w-amount text-right">Over Amount</th>
                 </tr>
@@ -754,6 +858,9 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             <div class="signoff-line"></div>
             <div class="signoff-role">Approved By</div>
         </div>
+    </div>
+    <div class="print-footer">
+        ${escapeHtml(header.ph_no || `PH #${header.id}`)} &nbsp; | &nbsp; <span class="page-number"></span>
     </div>
 </body>
 </html>
