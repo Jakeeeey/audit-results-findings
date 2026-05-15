@@ -24,6 +24,7 @@ type BuildGroupedRowsParams = {
     runningInventoryRows?: RunningInventoryRow[];
     ph_id?: number | null;
     rfidCountByDetailId?: Record<number, number>;
+    ignoreRfid?: boolean;
 };
 
 function familyKeyOf(row: { parent_id: number | null; product_id: number }): number {
@@ -81,6 +82,7 @@ export function buildGroupedPhysicalInventoryRows(
         runningInventoryRows = [],
         ph_id = null,
         rfidCountByDetailId = {},
+        ignoreRfid = false,
     } = params;
 
     const detailMap = buildDetailMap(details);
@@ -126,7 +128,7 @@ export function buildGroupedPhysicalInventoryRows(
                     ? coalesceNumber(rfidCountByDetailId[detailId], 0)
                     : 0;
 
-            const isRfidRow = requiresRfid();
+            const isRfidRow = !ignoreRfid && requiresRfid();
             const physicalCount = isRfidRow
                 ? rfidCount
                 : coalesceNumber(detail?.physical_count, 0);

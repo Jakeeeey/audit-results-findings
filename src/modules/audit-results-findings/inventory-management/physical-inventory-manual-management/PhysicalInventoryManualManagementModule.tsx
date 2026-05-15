@@ -448,6 +448,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                     details: activeDetails,
                     runningInventoryRows: activeRunningInventoryRows,
                     ph_id: activeHeader?.id ?? null,
+                    ignoreRfid: true,
                 });
 
                 setGroupedRows(nextGrouped);
@@ -693,6 +694,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                             details: existingDetails,
                             runningInventoryRows: nextRunningRows,
                             ph_id: existingHeader.id ?? null,
+                            ignoreRfid: true,
                         });
 
                         setGroupedRows(nextGrouped);
