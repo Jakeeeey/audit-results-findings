@@ -854,6 +854,9 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             <div class="signoff-role">Approved By</div>
         </div>
     </div>
+    <div class="print-footer">
+        ${escapeHtml(header.ph_no || `PH #${header.id}`)} &nbsp; | &nbsp; <span class="page-number"></span>
+    </div>
 </body>
 </html>
     `;
