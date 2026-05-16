@@ -238,7 +238,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                     if (sentinel) {
                         const rect = sentinel.getBoundingClientRect();
                         const shouldBeScrolled = rect.bottom < 0;
-                        
+
                         // Functional update with check to avoid unnecessary re-renders of the large module
                         setIsScrolled(prev => {
                             if (prev !== shouldBeScrolled) return shouldBeScrolled;
@@ -1270,7 +1270,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
                 await createPhysicalInventoryDetailsBulk(payloads);
                 await reloadDetails(header.id);
-                
+
                 if (payloads.length > 1) {
                     toast.success(`Added ${payloads.length} variants for family "${variant.product_name}".`);
                 } else {
@@ -1496,7 +1496,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                             className="cursor-pointer border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40"
                             onClick={() =>
                                 router.push(
-                                    `/scm/inventory-management/physical-inventory/offsetting?id=${header.id}`,
+                                    `/arf/inventory-management/physical-inventory/offsetting?id=${header.id}`,
                                 )
                             }
                             disabled={!header.id}
@@ -1548,7 +1548,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                                 const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
                                 const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
                                 const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
-                                
+
                                 printAuditSheet({
                                     header,
                                     groupedRows,
@@ -2038,7 +2038,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
             />
 
             {groupedRows.length > 0 && (
-                <div 
+                <div
                     className={cn(
                         "fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] w-full max-w-xl px-4 pointer-events-none transition-all duration-500 ease-in-out",
                         isScrolled ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-20 scale-90"
@@ -2054,7 +2054,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                                 className="h-12 w-full bg-transparent border-none focus:ring-0 text-sm pl-12 pr-4 placeholder:text-muted-foreground/50"
                             />
                         </div>
-                        <Button 
+                        <Button
                             className="rounded-full h-12 w-12 p-0 bg-primary text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0"
                             onClick={() => setOpenAddProductDialog(true)}
                             disabled={!canEdit}
