@@ -619,26 +619,21 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         .w-difference { width: 15%; }
 
         @media print {
+            @page {
+                margin: 15mm 15mm 20mm;
+                @bottom-center {
+                    content: "${escapeHtml(header.ph_no || `PH #${header.id}`)}  |  Page " counter(page) " of " counter(pages);
+                    font-family: Arial, sans-serif;
+                    font-size: 9px;
+                    color: #6b7280;
+                    border-top: 1px solid #d4d4d8;
+                    width: 100%;
+                    padding-top: 10px;
+                }
+            }
+
             body {
-                padding: 16px 18px 40px;
-            }
-
-            .print-footer {
-                display: block;
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                text-align: center;
-                font-size: 9px;
-                color: var(--muted);
-                padding: 10px 0;
-                background: white;
-                border-top: 1px solid var(--border);
-            }
-
-            .page-number:after {
-                content: "Page " counter(page);
+                padding: 0;
             }
 
             .section,
@@ -858,9 +853,6 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             <div class="signoff-line"></div>
             <div class="signoff-role">Approved By</div>
         </div>
-    </div>
-    <div class="print-footer">
-        ${escapeHtml(header.ph_no || `PH #${header.id}`)} &nbsp; | &nbsp; <span class="page-number"></span>
     </div>
 </body>
 </html>
