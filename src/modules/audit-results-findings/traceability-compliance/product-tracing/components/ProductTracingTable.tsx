@@ -341,15 +341,6 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({
         );
     }
 
-    if (data.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-24 text-center text-muted-foreground border-2 border-dashed rounded-[2.5rem] bg-muted/5">
-                <p className="text-xl font-bold text-foreground/80 mb-1">No Trace records</p>
-                <p className="text-sm font-medium opacity-60 max-w-xs mx-auto">Try adjusting your filters or selecting a different date range.</p>
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-4">
             <div className="flex justify-end pr-2 gap-2">

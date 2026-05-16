@@ -29,6 +29,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
     const [familyRunningTotal, setFamilyRunningTotal] = React.useState<number>(0);
+    const [hasSearched, setHasSearched] = React.useState(false);
 
     React.useEffect(() => {
         const loadInitialData = async () => {
@@ -58,6 +59,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
         });
         setMovements([]);
         setError(null);
+        setHasSearched(false);
     };
 
     const handleSearch = async () => {
@@ -69,6 +71,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
 
         setIsLoading(true);
         setError(null);
+        setHasSearched(true);
         try {
             // Use the actual startDate and endDate formatted as YYYY-MM-DD for the optimized /date endpoint
             const fetchFilters = {
@@ -262,7 +265,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                 </div>
             )}
 
-            {(movements.length > 0 || isLoading) && (
+            {(hasSearched || isLoading) && (
                 <div className="space-y-6">
                     {stats.filtered && stats.filtered.some(m => m.docNo.toUpperCase().startsWith("PH") || m.docType?.toUpperCase() === "PHYSICAL INVENTORY") && (
                         <PhysicalInventorySummary
@@ -299,7 +302,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                 </div>
             )}
 
-            {movements.length === 0 && !isLoading && !error && (
+            {!hasSearched && !isLoading && !error && (
                 <div className="flex flex-col items-center justify-center py-32 text-center border-2 border-dashed rounded-[2rem] bg-muted/5 animate-in zoom-in-95 duration-500">
                     <div className="h-20 w-20 bg-muted/10 rounded-full flex items-center justify-center mb-6">
                         <TracerSearchIcon className="h-10 w-10 text-muted-foreground/40" />
