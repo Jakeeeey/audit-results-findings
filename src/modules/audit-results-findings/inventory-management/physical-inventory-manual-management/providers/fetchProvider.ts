@@ -483,6 +483,7 @@ export type RunningInventoryFilterInput = {
     branchName: string;
     supplierShortcut?: string;
     productCategory?: string;
+    cutOffDate?: string;
 };
 
 export async function fetchRunningInventoryFiltered(input: RunningInventoryFilterInput): Promise<RunningInventoryRow[]> {
@@ -496,6 +497,10 @@ export async function fetchRunningInventoryFiltered(input: RunningInventoryFilte
 
     if (input.productCategory && input.productCategory.trim()) {
         params.productCategory = input.productCategory.trim();
+    }
+
+    if (input.cutOffDate && input.cutOffDate.trim()) {
+        params.cutOffDate = input.cutOffDate.trim();
     }
 
     const rows = await apiGet<RunningInventoryApiRow[]>(
@@ -862,6 +867,7 @@ export function resolveRunningInventoryFilterParams(input: {
     branches: BranchRow[];
     suppliers: SupplierRow[];
     lookup: ProductLookupBundle;
+    cutOffDate?: string | null;
 }): RunningInventoryFilterInput {
     const branch = input.branches.find((row) => row.id === input.branchId);
     if (!branch?.branch_name?.trim()) {
@@ -887,6 +893,7 @@ export function resolveRunningInventoryFilterParams(input: {
             ? { supplierShortcut: supplier.supplier_shortcut.trim() }
             : {}),
         ...(isAllCategory ? {} : { productCategory: category.category_name.trim() }),
+        ...(input.cutOffDate ? { cutOffDate: input.cutOffDate } : {}),
     };
 }
 function extractTrailingNumber(value: string): number | null {

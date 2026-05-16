@@ -506,6 +506,7 @@ export async function fetchRunningInventoryFiltered(input: {
     branchName: string;
     supplierShortcut?: string;
     productCategory?: string;
+    cutOffDate?: string | null;
 }): Promise<RunningInventoryRow[]> {
     const params: Record<string, string> = {
         branchName: input.branchName,
@@ -517,6 +518,10 @@ export async function fetchRunningInventoryFiltered(input: {
 
     if (input.productCategory && input.productCategory.trim()) {
         params.productCategory = input.productCategory.trim();
+    }
+
+    if (input.cutOffDate && input.cutOffDate.trim()) {
+        params.cutOffDate = input.cutOffDate.trim();
     }
 
     const rows = await apiGet<RunningInventoryApiRow[]>(
@@ -957,10 +962,12 @@ export function resolveRunningInventoryFilterParams(input: {
     branches: BranchRow[];
     suppliers: SupplierRow[];
     lookup: ProductLookupBundle;
+    cutOffDate?: string | null;
 }): {
     branchName: string;
     supplierShortcut?: string;
     productCategory?: string;
+    cutOffDate?: string;
 } {
     const branch = input.branches.find((row) => row.id === input.branchId);
     if (!branch?.branch_name?.trim()) {
@@ -984,6 +991,7 @@ export function resolveRunningInventoryFilterParams(input: {
         branchName: branch.branch_name.trim(),
         ...(supplier?.supplier_shortcut?.trim() ? { supplierShortcut: supplier.supplier_shortcut.trim() } : {}),
         ...(isAllCategory ? {} : { productCategory: category.category_name.trim() }),
+        ...(input.cutOffDate?.trim() ? { cutOffDate: input.cutOffDate.trim() } : {}),
     };
 }
 function extractTrailingNumber(value: string): number | null {
