@@ -216,6 +216,7 @@ export type PhysicalInventoryFiltersType = {
     supplier_id: number | null;
     category_id: number | null;
     price_type_id: number | null;
+    cutOffDate?: string | null;
 };
 
 export type LoadProductsValidation = {
