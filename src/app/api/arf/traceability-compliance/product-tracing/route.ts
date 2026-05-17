@@ -33,8 +33,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const parentId = incomingUrl.searchParams.get("parentId") ?? "";
         const branchName = incomingUrl.searchParams.get("branchName") ?? "";
         const productName = incomingUrl.searchParams.get("productName") ?? "";
-        const startDate = incomingUrl.searchParams.get("startDate") ?? "";
-        const endDate = incomingUrl.searchParams.get("endDate") ?? "";
+
 
         // Use the /filter endpoint to get full history for the branch/product
         const targetUrl = new URL(
