@@ -72,19 +72,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 const { fetchConsolidationItems, fetchPHCountsForTracing, fetchAllFamilyPHs } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
 
                 // 0. Proactively fetch ALL relevant PH documents for this family/branch from Directus.
-                // This bridges the gap where the Spring movement view omits PH records that have 0 variance.
+                // This bridges the gap where the Spring movement view omits PH records that have 0 variance,
+                // and avoids duplicate unpatched PH rows from Spring Boot.
                 const allFamilyPhs: Map<string, unknown[]> | null = await fetchAllFamilyPHs(branchId, parentId);
                 const phRegistry = new Map<string, { seenIds: Set<string>, template: Record<string, unknown> | null, phDetails: unknown[] }>();
 
-                // Pre-populate registry with proactive data to ensure they appear in the ledger
+                // Pre-populate registry with proactive data to ensure ALL historical PH records appear in the ledger
                 if (allFamilyPhs) {
                     allFamilyPhs.forEach((details: unknown[], phNo: string) => {
-                        const firstDetail = details[0] as { ph_id?: { date_encoded?: string } };
-                        const ts = firstDetail?.ph_id?.date_encoded;
-                        // Basic date filtering to match the query range if provided
-                        if (startDate && ts && ts < startDate) return;
-                        if (endDate && ts && ts > endDate) return;
-
                         phRegistry.set(phNo, {
                             seenIds: new Set(),
                             template: null,
@@ -93,6 +88,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     });
                 }
 
+                // Filter out Spring Boot's unpatched/improperly-formatted Physical Inventory rows,
+                // because allFamilyPhs and phRegistry will inject 100% accurate, fully-detailed PH rows directly from Directus.
+                const nonPhData = data.filter((row: { docType?: string; docNo?: string }) => {
+                    const docT = String(row.docType || "").toUpperCase();
+                    const docN = String(row.docNo || "").toUpperCase();
+                    const isPH = docT === "PHYSICAL INVENTORY" || docN.startsWith("PH") || docN.includes("PH ");
+                    return !isPH;
+                });
+
                 // Per-request cache to avoid redundant calls for same docNo in the ledger
                 const consolidationCache = new Map<string, unknown[]>();
                 const phCache = new Map<string, unknown[]>();
@@ -100,7 +104,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 const patchedConsolidations = new Set<string>();
                 const docExistingOutBase = new Map<string, number>();
 
-                data.forEach((row: { docType?: string; docNo?: string; outBase?: number }) => {
+                nonPhData.forEach((row: { docType?: string; docNo?: string; outBase?: number }) => {
                     const docT = String(row.docType || "").toUpperCase();
                     const docN = String(row.docNo || "").toUpperCase().trim();
                     const isConsolidated = docT === "CONSOLIDATION DISPATCHES" || docN.startsWith("CLDTO");
@@ -109,7 +113,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     }
                 });
 
-                await Promise.all(data.map(async (row: { 
+                await Promise.all(nonPhData.map(async (row: { 
                     docType?: string; 
                     docNo: string; 
                     inBase?: number; 
@@ -159,7 +163,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                         }
                     }
 
-                    // 2. Patch Physical Inventory Counts (Variance calculation)
+                    // 2. Patch Physical Inventory Counts (Variance calculation) - kept for safety if any PH row remains
                     const isPH = docT === "PHYSICAL INVENTORY" || docN.startsWith("PH") || docN.includes("PH ");
                     if (isPH) {
                         try {
@@ -230,13 +234,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                             synth.variance = (Number(detail.physical_count) || 0) - (Number(detail.system_count) || 0);
                             synth.inBase = 0;
                             synth.outBase = 0;
-                            data.push(synth as Record<string, unknown>);
+                            nonPhData.push(synth as Record<string, unknown>);
                             info.seenIds.add(dPid);
                         }
                     });
                 });
 
-                return NextResponse.json(data, {
+                return NextResponse.json(nonPhData, {
                     status: springRes.status,
                     headers: { "Content-Type": "application/json" }
                 });

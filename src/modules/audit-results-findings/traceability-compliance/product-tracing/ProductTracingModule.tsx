@@ -124,7 +124,14 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
 
         // The user requested that the beginning balance should be derived solely from the first PH.
         // Therefore, we ignore any non-PH transactions that occurred *before* the first ever PH.
-        const firstPHIndex = validMovements.findIndex(row => row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH"));
+        const firstPHIndex = validMovements.findIndex(row => {
+            const isPH = row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH");
+            if (!isPH) return false;
+            // Ensure the PH record is a historical anchor (occurred strictly before the selected start date).
+            // If the PH occurred during the selected date range, it is a current period transaction, not a historical anchor.
+            if (start && new Date(row.ts) >= start) return false;
+            return true;
+        });
         if (firstPHIndex > -1) {
             validMovements = validMovements.slice(firstPHIndex);
             
