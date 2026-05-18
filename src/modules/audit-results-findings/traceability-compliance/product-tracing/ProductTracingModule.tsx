@@ -29,6 +29,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
     const [familyRunningTotal, setFamilyRunningTotal] = React.useState<number>(0);
+    const [hasSearched, setHasSearched] = React.useState(false);
 
     React.useEffect(() => {
         const loadInitialData = async () => {
@@ -58,6 +59,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
         });
         setMovements([]);
         setError(null);
+        setHasSearched(false);
     };
 
     const handleSearch = async () => {
@@ -69,6 +71,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
 
         setIsLoading(true);
         setError(null);
+        setHasSearched(true);
         try {
             // Use the actual startDate and endDate formatted as YYYY-MM-DD for the optimized /date endpoint
             const fetchFilters = {
@@ -121,7 +124,14 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
 
         // The user requested that the beginning balance should be derived solely from the first PH.
         // Therefore, we ignore any non-PH transactions that occurred *before* the first ever PH.
-        const firstPHIndex = validMovements.findIndex(row => row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH"));
+        const firstPHIndex = validMovements.findIndex(row => {
+            const isPH = row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH");
+            if (!isPH) return false;
+            // Ensure the PH record is a historical anchor (occurred strictly before the selected start date).
+            // If the PH occurred during the selected date range, it is a current period transaction, not a historical anchor.
+            if (start && new Date(row.ts) >= start) return false;
+            return true;
+        });
         if (firstPHIndex > -1) {
             validMovements = validMovements.slice(firstPHIndex);
             
@@ -262,7 +272,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                 </div>
             )}
 
-            {(movements.length > 0 || isLoading) && (
+            {(hasSearched || isLoading) && (
                 <div className="space-y-6">
                     {stats.filtered && stats.filtered.some(m => m.docNo.toUpperCase().startsWith("PH") || m.docType?.toUpperCase() === "PHYSICAL INVENTORY") && (
                         <PhysicalInventorySummary
@@ -299,7 +309,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                 </div>
             )}
 
-            {movements.length === 0 && !isLoading && !error && (
+            {!hasSearched && !isLoading && !error && (
                 <div className="flex flex-col items-center justify-center py-32 text-center border-2 border-dashed rounded-[2rem] bg-muted/5 animate-in zoom-in-95 duration-500">
                     <div className="h-20 w-20 bg-muted/10 rounded-full flex items-center justify-center mb-6">
                         <TracerSearchIcon className="h-10 w-10 text-muted-foreground/40" />
