@@ -91,7 +91,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // 3. Optimized Patching Layer (Consolidation & Physical Inventory Counts)
         if (movementsData.length > 0) {
             try {
-                const { fetchConsolidationItems, fetchPHCountsForTracing } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
+                const { fetchConsolidationItems, fetchPHCountsForTracing, getFamilyUnit } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
+                const famUnit = await getFamilyUnit(parentId);
 
                 const consolidationCache = new Map<string, unknown[]>();
                 const phCache = new Map<string, unknown[]>();
@@ -181,6 +182,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                         }
                     }
                 }));
+
+                movementsData.forEach((row: Record<string, unknown>) => {
+                    row.familyUnit = famUnit.name;
+                    row.familyUnitCount = famUnit.count;
+                });
             } catch (patchErr) {
                 console.error("[Cross Tracing API] Patching Layer Error:", patchErr);
             }

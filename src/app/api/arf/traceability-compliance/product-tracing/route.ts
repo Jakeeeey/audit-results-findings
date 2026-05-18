@@ -68,7 +68,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // Patching Layer: Supplemental data for Consolidated Documents & Physical Inventory Counts
         if (Array.isArray(data) && parentId) {
             try {
-                const { fetchConsolidationItems, fetchPHCountsForTracing, fetchAllFamilyPHs } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
+                const { fetchConsolidationItems, fetchPHCountsForTracing, fetchAllFamilyPHs, getFamilyUnit } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
+                const famUnit = await getFamilyUnit(parentId);
 
                 // 0. Proactively fetch ALL relevant PH documents for this family/branch from Directus.
                 // This bridges the gap where the Spring movement view omits PH records that have 0 variance,
@@ -87,14 +88,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     });
                 }
 
-                // Filter out Spring Boot's unpatched/improperly-formatted Physical Inventory rows,
-                // because allFamilyPhs and phRegistry will inject 100% accurate, fully-detailed PH rows directly from Directus.
-                const nonPhData = data.filter((row: { docType?: string; docNo?: string }) => {
-                    const docT = String(row.docType || "").toUpperCase();
-                    const docN = String(row.docNo || "").toUpperCase();
-                    const isPH = docT === "PHYSICAL INVENTORY" || docN.startsWith("PH") || docN.includes("PH ");
-                    return !isPH;
-                });
+                // Preserve Spring Boot's movement rows (including PH rows) so that we retain the true database variance and box information,
+                // while allFamilyPhs and phRegistry will supplement any 0-variance PH records that Spring Boot omitted entirely.
+                const nonPhData = [...data];
 
                 // Per-request cache to avoid redundant calls for same docNo in the ledger
                 const consolidationCache = new Map<string, unknown[]>();
@@ -220,7 +216,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                         system_count?: number;
                     }[]).forEach((detail) => {
                         const dPid = String(typeof detail.product_id === 'object' ? detail.product_id?.product_id : detail.product_id || "");
-                        const dParentId = String(typeof detail.product_id === 'object' ? detail.product_id?.parent_id : "");
+                        const rawParent = typeof detail.product_id === 'object' ? detail.product_id?.parent_id : null;
+                        const dParentId = String(typeof rawParent === 'object' && rawParent !== null ? (rawParent as Record<string, unknown>).product_id || rawParent : rawParent || "");
 
                         // If it belongs to our family but wasn't in the response yet
                         if (!info.seenIds.has(dPid) && (dPid === String(parentId) || dParentId === String(parentId))) {
@@ -237,6 +234,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                             info.seenIds.add(dPid);
                         }
                     });
+                });
+
+                nonPhData.forEach((row: Record<string, unknown>) => {
+                    row.familyUnit = famUnit.name;
+                    row.familyUnitCount = famUnit.count;
                 });
 
                 return NextResponse.json(nonPhData, {

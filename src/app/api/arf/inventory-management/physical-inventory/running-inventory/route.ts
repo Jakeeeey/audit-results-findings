@@ -186,7 +186,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const inventoryMap = new Map<string, { productId: number; branchId: number; runningInventory: number }>();
 
         for (const familyMovements of movementsByFamily.values()) {
-            let validMovements = familyMovements.filter(row => {
+            const validMovements = familyMovements.filter(row => {
                 if (!row.ts) return true;
                 const rawStr = String(row.ts).trim();
 
@@ -223,35 +223,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
             validMovements.sort((a, b) => toUtcMs(a.ts) - toUtcMs(b.ts));
 
-            const firstPHIndex = validMovements.findIndex(row => {
-                const docT = String(row.docType || "").toUpperCase();
-                const docN = String(row.docNo || "").toUpperCase();
-                return docT === "PHYSICAL INVENTORY" || docN.startsWith("PH");
-            });
-
-            if (firstPHIndex > -1) {
-                // Slice off all history before the first PH
-                validMovements = validMovements.slice(firstPHIndex);
-                
-                const firstPHDocNo = validMovements[0].docNo;
-                
-                // Override the first PH so its variance is purely its physical count
-                validMovements.forEach(row => {
-                    if (row.docNo === firstPHDocNo) {
-                        const phys = row.physical_count !== undefined ? row.physical_count : row.physicalCount;
-                        if (phys !== undefined && phys !== null) {
-                            row.variance = Number(phys);
-                            row.system_count = 0;
-                            row.systemCount = 0;
-                        } else {
-                            // Safe fallback
-                            row.variance = 0;
-                            row.system_count = 0;
-                            row.systemCount = 0;
-                        }
-                    }
-                });
-            }
+            // Running inventory accumulates all movements up to cutOffTime to maintain consistency with the movement ledger
 
             // 4. Calculate the running inventory FOR EACH INDIVIDUAL PRODUCT within the family
             const runningInventoryByProduct = new Map<number, number>();
