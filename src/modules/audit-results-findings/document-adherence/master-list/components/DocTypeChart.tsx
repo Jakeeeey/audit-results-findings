@@ -8,9 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartEmptyState } from './ChartEmptyState';
 import type { DocTypeChartDatum } from '../types';
 
-interface Props { data: DocTypeChartDatum[] }
+interface Props { 
+  data: DocTypeChartDatum[];
+  onBarClick?: (docType: string) => void;
+}
 
-export function SubsystemDocTypeChart({ data }: Props) {
+export function SubsystemDocTypeChart({ data, onBarClick }: Props) {
   return (
     <Card className="shadow-none border-border">
       <CardHeader className="border-b border-border/50 pb-3">
@@ -23,7 +26,16 @@ export function SubsystemDocTypeChart({ data }: Props) {
           <ChartEmptyState label="doc types" />
         ) : (
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+            <BarChart 
+              data={data} 
+              margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+              onClick={(e) => {
+                if (onBarClick && e?.activeLabel) {
+                  onBarClick(e.activeLabel as string);
+                }
+              }}
+              style={{ cursor: onBarClick ? 'pointer' : 'default' }}
+            >
               <CartesianGrid
                 strokeDasharray="3 3"
                 vertical={false}

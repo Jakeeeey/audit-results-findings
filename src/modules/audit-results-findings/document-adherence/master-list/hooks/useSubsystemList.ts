@@ -69,19 +69,21 @@ const DEFAULT_FILTERS: SubsystemFilters = {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useSubsystemList() {
+export function useSubsystemList(subsystemCode?: string) {
   const [rows, setRows]       = useState<SubsystemTableRow[]>([]);
   const [allRows, setAllRows] = useState<SubsystemTableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
   const [filters, setFilters] = useState<SubsystemFilters>(DEFAULT_FILTERS);
 
-  // Fetch all records once (no filters) — used only to populate dropdown options
   useEffect(() => {
     fetchSubsystemRecords({ docType: '', user: '', dateFrom: undefined, dateTo: undefined })
-      .then(records => setAllRows(records.map((r, idx) => toRow(r, idx))))
+      .then(records => {
+        const filtered = subsystemCode ? records.filter(r => r.subsystem === subsystemCode) : records;
+        setAllRows(filtered.map((r, idx) => toRow(r, idx)));
+      })
       .catch(() => setAllRows([]));
-  }, []);
+  }, [subsystemCode]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,7 +95,8 @@ export function useSubsystemList() {
         dateFrom: filters.dateFrom,
         dateTo:   filters.dateTo,
       });
-      const mapped = records.map((r, idx) => toRow(r, idx));
+      const filtered = subsystemCode ? records.filter(r => r.subsystem === subsystemCode) : records;
+      const mapped = filtered.map((r, idx) => toRow(r, idx));
       mapped.sort((a, b) => b.rawDate.localeCompare(a.rawDate));
       setRows(mapped);
     } catch (err: unknown) {

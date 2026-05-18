@@ -14,9 +14,10 @@ const COLORS = [
 interface Props {
   data:      UserChartDatum[];
   userNames: string[];
+  onUserClick?: (userName: string) => void;
 }
 
-export function SubsystemUserChart({ data}: Props) {
+export function SubsystemUserChart({ data, userNames, onUserClick }: Props) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const sorted = data.slice().sort((a, b) => b.value - a.value);
 
@@ -48,6 +49,12 @@ export function SubsystemUserChart({ data}: Props) {
                   outerRadius={95}
                   paddingAngle={2}
                   stroke="none"
+                  onClick={(e) => {
+                    if (onUserClick && e?.name) {
+                      onUserClick(e.name as string);
+                    }
+                  }}
+                  style={{ cursor: onUserClick ? 'pointer' : 'default' }}
                 >
                   {data.map((_, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
