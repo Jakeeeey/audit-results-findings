@@ -17,7 +17,7 @@ interface Props {
   onUserClick?: (userName: string) => void;
 }
 
-export function SubsystemUserChart({ data, userNames, onUserClick }: Props) {
+export function SubsystemUserChart({ data, onUserClick }: Props) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const sorted = data.slice().sort((a, b) => b.value - a.value);
 

@@ -106,7 +106,7 @@ export function useSubsystemList(subsystemCode?: string) {
     } finally {
       setLoading(false);
     }
-  }, [filters.docType, filters.user, filters.dateFrom, filters.dateTo]);
+  }, [filters.docType, filters.user, filters.dateFrom, filters.dateTo, subsystemCode]);
 
   useEffect(() => { load(); }, [load]);
 
