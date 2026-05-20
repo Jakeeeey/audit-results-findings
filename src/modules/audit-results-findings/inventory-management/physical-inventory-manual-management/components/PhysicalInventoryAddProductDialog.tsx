@@ -61,7 +61,7 @@ export function PhysicalInventoryAddProductDialog(props: Props) {
         }>();
 
         for (const variant of addableVariants) {
-            const familyKey = variant.parent_id ?? variant.product_id;
+            const familyKey = (variant.parent_id && variant.parent_id > 0) ? variant.parent_id : variant.product_id;
             if (!map.has(familyKey)) {
                 map.set(familyKey, {
                     representative: variant,

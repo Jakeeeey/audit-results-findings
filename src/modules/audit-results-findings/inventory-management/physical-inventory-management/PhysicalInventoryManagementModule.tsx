@@ -31,7 +31,7 @@ import {
     computeAmount,
     computeDifferenceCost,
     computeVariance,
-    convertBaseQtyToDisplayQty,
+    cascadeFamilyBaseStockToVariants,
     createPhysicalInventoryDetailsBulk,
     createPhysicalInventoryHeader,
     derivePhysicalInventoryStatus,
@@ -582,7 +582,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
             const params = resolveRunningInventoryFilterParams({
                 branchId: nextFilters.branch_id,
-                supplierId: null, // Fetch for all suppliers to get total branch stock
+                supplierId: nextFilters.supplier_id,
                 categoryId: nextFilters.category_id,
                 branches,
                 suppliers,
@@ -784,7 +784,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
                         const params = resolveRunningInventoryFilterParams({
                             branchId,
-                            supplierId: null,
+                            supplierId,
                             categoryId,
                             branches: nextBranches,
                             suppliers: nextSuppliers,
@@ -1119,6 +1119,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 branches,
                 suppliers,
                 lookup: lookupBundle,
+                cutOffDate: savedHeader.cutOff_date,
             });
 
             const runningInventoryCacheKey = buildRunningInventoryCacheKey(
@@ -1154,47 +1155,70 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 runningInventoryByProductId.set(row.product_id, current + (row.running_inventory ?? 0));
             }
 
-            const familyVariantsMap = new Map<number, EligibleVariantRow[]>();
-            for (const v of eligibleVariants) {
-                const familyKey = v.parent_id && v.parent_id > 0 ? v.parent_id : v.product_id;
-                const bucket = familyVariantsMap.get(familyKey) ?? [];
-                bucket.push(v);
-                familyVariantsMap.set(familyKey, bucket);
-            }
+            // Identify product families and total base stock
+            const familyBaseStockMap = new Map<number, number>();
+            const familiesWithStock = new Set<number>();
 
-            const detailPayloads: PhysicalInventoryDetailUpsertPayload[] = [];
-            for (const [, variants] of familyVariantsMap.entries()) {
-                const hasAnyStock = variants.some(
-                    (v) => (runningInventoryByProductId.get(v.product_id) ?? 0) !== 0,
-                );
+            for (const variant of eligibleVariants) {
+                const familyKey = variant.parent_id ?? variant.product_id;
+                const stock = runningInventoryByProductId.get(variant.product_id) ?? 0;
 
-                if (hasAnyStock) {
-                    for (const variant of variants) {
-                        const totalRunning = runningInventoryByProductId.get(variant.product_id) ?? 0;
-                        const systemCount = convertBaseQtyToDisplayQty(
-                            totalRunning,
-                            variant.unit_count,
-                        );
+                const currentFamilyStock = familyBaseStockMap.get(familyKey) ?? 0;
+                familyBaseStockMap.set(familyKey, currentFamilyStock + stock);
 
-                        const initialPhysicalCount = 0;
-                        const variance = computeVariance(initialPhysicalCount, systemCount);
-                        const differenceCost = computeDifferenceCost(variance, variant.unit_price);
-                        const amount = computeAmount(initialPhysicalCount, variant.unit_price);
-
-                        detailPayloads.push({
-                            ph_id: savedHeader.id,
-                            product_id: variant.product_id,
-                            unit_price: variant.unit_price,
-                            system_count: systemCount,
-                            physical_count: initialPhysicalCount,
-                            variance,
-                            difference_cost: differenceCost,
-                            amount,
-                            offset_match: 0,
-                        });
-                    }
+                if (stock !== 0) {
+                    familiesWithStock.add(familyKey);
                 }
             }
+
+            // Group variants by family and compute allocations
+            const systemCountAllocations = new Map<number, number>();
+            const variantsByFamily = new Map<number, typeof eligibleVariants>();
+
+            for (const variant of eligibleVariants) {
+                const familyKey = variant.parent_id ?? variant.product_id;
+                if (!familiesWithStock.has(familyKey)) continue;
+
+                if (!variantsByFamily.has(familyKey)) {
+                    variantsByFamily.set(familyKey, []);
+                }
+                variantsByFamily.get(familyKey)!.push(variant);
+            }
+
+            for (const [familyKey, variants] of variantsByFamily.entries()) {
+                const totalBaseStock = familyBaseStockMap.get(familyKey) ?? 0;
+                const allocation = cascadeFamilyBaseStockToVariants(totalBaseStock, variants);
+                for (const [pid, count] of allocation.entries()) {
+                    systemCountAllocations.set(pid, count);
+                }
+            }
+
+            // Load entire families if at least one member has stock
+            const detailPayloads = eligibleVariants
+                .filter((variant) => {
+                    const familyKey = variant.parent_id ?? variant.product_id;
+                    return familiesWithStock.has(familyKey);
+                })
+                .map((variant) => {
+                    const systemCount = systemCountAllocations.get(variant.product_id) ?? 0;
+
+                    const initialPhysicalCount = 0;
+                    const variance = computeVariance(initialPhysicalCount, systemCount);
+                    const differenceCost = computeDifferenceCost(variance, variant.unit_price);
+                    const amount = computeAmount(initialPhysicalCount, variant.unit_price);
+
+                    return {
+                        ph_id: savedHeader.id,
+                        product_id: variant.product_id,
+                        unit_price: variant.unit_price,
+                        system_count: systemCount,
+                        physical_count: initialPhysicalCount,
+                        variance,
+                        difference_cost: differenceCost,
+                        amount,
+                        offset_match: 0,
+                    };
+                });
 
             await createPhysicalInventoryDetailsBulk(detailPayloads);
             await reloadDetails(savedHeader.id);
@@ -1239,16 +1263,19 @@ export function PhysicalInventoryManagementModule(props: Props) {
                     return;
                 }
 
-                const payloads: PhysicalInventoryDetailUpsertPayload[] = siblingsToLoad.map((sibling) => {
-                    // Aggregate running inventory from all suppliers for this product
-                    const totalRunning = runningInventoryRows
-                        .filter((r) => r.product_id === sibling.product_id && r.branch_id === header.branch_id)
-                        .reduce((acc, r) => acc + (r.running_inventory ?? 0), 0);
+                // Aggregate running inventory for the ENTIRE FAMILY from all suppliers
+                const familyTotalBaseStock = runningInventoryRows
+                    .filter((r) => r.branch_id === header.branch_id &&
+                        familySiblings.some(s => s.product_id === r.product_id))
+                    .reduce((acc, r) => acc + (r.running_inventory ?? 0), 0);
 
-                    const systemCount = convertBaseQtyToDisplayQty(
-                        totalRunning,
-                        sibling.unit_count
-                    );
+                const systemCountAllocations = cascadeFamilyBaseStockToVariants(
+                    familyTotalBaseStock,
+                    familySiblings
+                );
+
+                const payloads: PhysicalInventoryDetailUpsertPayload[] = siblingsToLoad.map((sibling) => {
+                    const systemCount = systemCountAllocations.get(sibling.product_id) ?? 0;
 
                     const initialPhysicalCount = 0;
                     const variance = computeVariance(initialPhysicalCount, systemCount);
@@ -1570,6 +1597,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 header={header}
                 status={status}
                 canEdit={canEdit}
+                hasLoadedDetails={hasLoadedDetails}
                 totalAmount={totalAmount}
                 onChangePhNo={(value) =>
                     setHydratedHeader((prev) => (prev ? { ...prev, ph_no: value } : prev))
