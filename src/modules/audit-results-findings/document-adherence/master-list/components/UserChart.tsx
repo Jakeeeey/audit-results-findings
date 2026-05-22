@@ -1,128 +1,120 @@
 'use client';
 
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Cell, LabelList,
+} from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartEmptyState } from './ChartEmptyState';
 import type { UserChartDatum } from '../types';
 
-const COLORS = [
-  '#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#10b981',
-  '#06b6d4', '#a855f7', '#f59e0b', '#14b8a6', '#6366f1',
-  '#84cc16', '#ef4444', '#0ea5e9', '#d946ef', '#fb923c',
-];
-
 interface Props {
-  data:      UserChartDatum[];
-  userNames: string[];
+  data: UserChartDatum[];
   onUserClick?: (userName: string) => void;
 }
 
 export function SubsystemUserChart({ data, onUserClick }: Props) {
-  const total = data.reduce((sum, d) => sum + d.value, 0);
-  const sorted = data.slice().sort((a, b) => b.value - a.value);
+  const sortedData = [...data]
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
 
-  // Each row is ~36px tall; 5 rows = 180px
-  const ROW_HEIGHT = 36;
-  const MAX_ROWS   = 5;
+  const maxVal = sortedData.length > 0 ? Math.max(...sortedData.map(d => d.value)) : 1;
+  const minVal = sortedData.length > 0 ? Math.min(...sortedData.map(d => d.value)) : 0;
+
+  function getRedColor(val: number): string {
+    if (maxVal === minVal) return 'hsl(0, 75%, 45%)';
+    const ratio = (val - minVal) / (maxVal - minVal); // 0 to 1
+    const lightness = Math.round(75 - (ratio * 40));  // 75% to 35%
+    const saturation = Math.round(60 + (ratio * 25)); // 60% to 85%
+    return `hsl(0, ${saturation}%, ${lightness}%)`;
+  }
 
   return (
     <Card className="shadow-none border-border">
       <CardHeader className="border-b border-border/50 pb-3">
-        <CardTitle className="text-sm font-semibold">Per User</CardTitle>
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          Non-Compliant by User
+          {onUserClick && (
+            <span className="text-[10px] font-normal text-muted-foreground">
+              — click a bar to view list & create NTE
+            </span>
+          )}
+        </CardTitle>
       </CardHeader>
-
       <CardContent className="pt-4">
-        {data.length === 0 ? (
-          <ChartEmptyState label="users" />
+        {sortedData.length === 0 ? (
+          <ChartEmptyState label="non-compliant users" />
         ) : (
-          <>
-            {/* Donut chart */}
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={data}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={95}
-                  paddingAngle={2}
-                  stroke="none"
-                  onClick={(e) => {
-                    if (onUserClick && e?.name) {
-                      onUserClick(e.name as string);
-                    }
-                  }}
-                  style={{ cursor: onUserClick ? 'pointer' : 'default' }}
-                >
-                  {data.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    const e = payload[0].payload as UserChartDatum;
-                    return (
-                      <div className="bg-popover border border-border rounded-md shadow-md px-2.5 py-1.5 text-xs">
-                        <p className="font-semibold text-foreground">{e.name}</p>
-                        <p className="text-muted-foreground">{e.value} docs · {((e.value / total) * 100).toFixed(1)}%</p>
-                      </div>
-                    );
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-
-            {/* Legend dropdown */}
-            <div className="mt-2 rounded-md border border-border overflow-hidden">
-              <details className="group">
-                <summary className="flex items-center justify-between px-3 py-2 cursor-pointer bg-muted/40 hover:bg-muted/60 transition-colors select-none">
-                  <span className="text-xs font-semibold text-foreground">
-                    All Users
-                    <span className="ml-1.5 text-muted-foreground font-normal">({data.length})</span>
-                  </span>
-                  <span className="text-muted-foreground text-[10px] group-open:rotate-180 transition-transform duration-200">▾</span>
-                </summary>
-
-                {/* Fixed height = 5 rows */}
-                <div
-                  className="overflow-y-auto divide-y divide-border/30"
-                  style={{ height: ROW_HEIGHT * MAX_ROWS }}
-                >
-                  {sorted.map((entry, i) => {
-                    const colorIdx = data.indexOf(entry);
-                    return (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between px-3 hover:bg-muted/20 transition-colors"
-                        style={{ height: ROW_HEIGHT }}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: COLORS[colorIdx % COLORS.length] }}
-                          />
-                          <span className="truncate text-xs text-foreground" title={entry.name}>
-                            {entry.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2.5 flex-shrink-0 ml-2">
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {((entry.value / total) * 100).toFixed(1)}%
-                          </span>
-                          <span className="text-xs font-semibold text-primary tabular-nums w-14 text-right">
-                            {entry.value} docs
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            </div>
-          </>
+          <ResponsiveContainer width="100%" height={Math.max(260, sortedData.length * 35 + 50)}>
+            <BarChart
+              data={sortedData}
+              layout="vertical"
+              margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+              onClick={(e) => {
+                if (onUserClick && e?.activeLabel) {
+                  onUserClick(e.activeLabel as string);
+                }
+              }}
+              style={{ cursor: onUserClick ? 'pointer' : 'default' }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                horizontal={true}
+                vertical={false}
+                stroke="rgba(128,128,128,0.1)"
+              />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                tickLine={false}
+                axisLine={false}
+                allowDecimals={false}
+              />
+              <YAxis
+                dataKey="name"
+                type="category"
+                tick={{ fontSize: 11, fontWeight: 600, fill: 'hsl(var(--foreground))' }}
+                tickLine={false}
+                axisLine={false}
+                width={80}
+                tickFormatter={(value) => {
+                  if (typeof value !== 'string') return value;
+                  const parts = value.trim().split(/\s+/);
+                  if (parts.length > 1) {
+                    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+                  }
+                  return parts[0] || '';
+                }}
+              />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const item = payload[0].payload as UserChartDatum;
+                  return (
+                    <div className="bg-popover border border-border rounded-md shadow-md px-2.5 py-1.5 text-xs">
+                      <p className="font-semibold text-foreground">{item.name}</p>
+                      <p className="text-red-600 mt-0.5 font-medium">
+                        Non-Compliant: <span className="font-bold">{item.value} docs</span>
+                      </p>
+                      {onUserClick && <p className="text-primary mt-1 text-[10px]">Click to view details & generate NTE</p>}
+                    </div>
+                  );
+                }}
+                cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
+              />
+              <Bar
+                dataKey="value"
+                name="Non-Compliant"
+                radius={[0, 4, 4, 0]}
+                barSize={20}
+              >
+                {sortedData.map((d, i) => (
+                  <Cell key={i} fill={getRedColor(d.value)} />
+                ))}
+                <LabelList dataKey="value" position="right" style={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))', fontWeight: 600 }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         )}
       </CardContent>
     </Card>

@@ -2,11 +2,16 @@
 
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend,
+  Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartEmptyState } from './ChartEmptyState';
 import type { DocTypeChartDatum } from '../types';
+
+const COLORS = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+  '#ec4899', '#f97316', '#06b6d4', '#a855f7', '#14b8a6',
+];
 
 interface Props { 
   data: DocTypeChartDatum[];
@@ -14,21 +19,31 @@ interface Props {
 }
 
 export function SubsystemDocTypeChart({ data, onBarClick }: Props) {
+  const sortedData = [...data]
+    .filter(d => d.nonCompliant > 0)
+    .sort((a, b) => b.nonCompliant - a.nonCompliant);
+
   return (
     <Card className="shadow-none border-border">
       <CardHeader className="border-b border-border/50 pb-3">
-        <CardTitle className="text-sm font-semibold">
-          Per Doc Type
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          Non-Compliant by Doc Type
+          {onBarClick && (
+            <span className="text-[10px] font-normal text-muted-foreground">
+              — click a bar to view list
+            </span>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
-        {data.length === 0 ? (
-          <ChartEmptyState label="doc types" />
+        {sortedData.length === 0 ? (
+          <ChartEmptyState label="non-compliant doc types" />
         ) : (
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={Math.max(260, sortedData.length * 35 + 50)}>
             <BarChart 
-              data={data} 
-              margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+              data={sortedData}
+              layout="vertical"
+              margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
               onClick={(e) => {
                 if (onBarClick && e?.activeLabel) {
                   onBarClick(e.activeLabel as string);
@@ -38,50 +53,52 @@ export function SubsystemDocTypeChart({ data, onBarClick }: Props) {
             >
               <CartesianGrid
                 strokeDasharray="3 3"
+                horizontal={true}
                 vertical={false}
                 stroke="rgba(128,128,128,0.1)"
               />
               <XAxis
-                dataKey="name"
-                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
+                type="number"
                 tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
                 tickLine={false}
                 axisLine={false}
                 allowDecimals={false}
               />
+              <YAxis
+                dataKey="name"
+                type="category"
+                tick={{ fontSize: 11, fontWeight: 600, fill: 'hsl(var(--foreground))' }}
+                tickLine={false}
+                axisLine={false}
+                width={80}
+              />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--popover))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px',
-                  fontSize: 12,
-                  color: 'hsl(var(--popover-foreground))',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const item = payload[0].payload as DocTypeChartDatum;
+                  return (
+                    <div className="bg-popover border border-border rounded-md shadow-md px-2.5 py-1.5 text-xs">
+                      <p className="font-semibold text-foreground">{item.name}</p>
+                      <p className="text-red-600 mt-0.5 font-medium">
+                        Non-Compliant: <span className="font-bold">{item.nonCompliant}</span>
+                      </p>
+                      {onBarClick && <p className="text-primary mt-1 text-[10px]">Click to view non-compliant documents</p>}
+                    </div>
+                  );
                 }}
-                labelStyle={{ color: 'hsl(var(--popover-foreground))', fontWeight: 600 }}
-                itemStyle={{ color: 'hsl(var(--muted-foreground))' }}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-              />
-              <Bar
-                dataKey="compliant"
-                name="Compliant"
-                fill="#10b981"
-                radius={[4, 4, 0, 0]}
-                barSize={28}
+                cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
               />
               <Bar
                 dataKey="nonCompliant"
-                name="Non-Compliant"
-                fill="#ef4444"
-                radius={[4, 4, 0, 0]}
-                barSize={28}
-              />
+                name="Non-Compliant Documents"
+                radius={[0, 4, 4, 0]}
+                barSize={20}
+              >
+                {sortedData.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                ))}
+                <LabelList dataKey="nonCompliant" position="right" style={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))', fontWeight: 600 }} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         )}

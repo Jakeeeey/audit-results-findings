@@ -69,13 +69,17 @@ export function SubsystemAnalyticsChart({ data, onBarClick }: Props) {
                 tickLine={false}
                 axisLine={false}
                 width={80}
+                tickFormatter={(value) => {
+                  if (typeof value !== 'string') return value;
+                  return value.length > 12 ? `${value.substring(0, 10)}...` : value;
+                }}
               />
               <Tooltip
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
                   const item = payload[0].payload as SubsystemChartDatum;
                   return (
-                    <div className="bg-popover border border-border rounded-md shadow-md px-2.5 py-1.5 text-xs">
+                     <div className="bg-popover border border-border rounded-md shadow-md px-2.5 py-1.5 text-xs">
                       <p className="font-semibold text-foreground">{item.name}</p>
                       <p className="text-muted-foreground mt-0.5">
                         Total: <span className="font-bold text-foreground">{item.total}</span>

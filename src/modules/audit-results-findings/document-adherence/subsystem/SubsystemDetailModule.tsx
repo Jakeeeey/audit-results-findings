@@ -9,7 +9,6 @@ import { useSubsystemList } from '../master-list/hooks/useSubsystemList';
 import { SubsystemFilterBar } from '../master-list/components/FilterBar';
 import { SubsystemDocTypeChart } from '../master-list/components/DocTypeChart';
 import { SubsystemUserChart } from '../master-list/components/UserChart';
-import { SubsystemTable } from '../master-list/components/Table';
 import { DocTypeDetailModal } from '../master-list/components/DocTypeDetailModal';
 import { UserDetailModal } from '../master-list/components/UserDetailModal';
 
@@ -59,7 +58,6 @@ export default function SubsystemDetailModule({ subsystemCode }: Props) {
         <Skeleton className="h-80" />
         <Skeleton className="h-80" />
       </div>
-      <Skeleton className="h-96" />
     </div>
   );
 
@@ -112,19 +110,9 @@ export default function SubsystemDetailModule({ subsystemCode }: Props) {
         />
         <SubsystemUserChart
           data={userChart}
-          userNames={userNames}
           onUserClick={handleUserClick}
         />
       </div>
-
-      {/* Table List */}
-      <SubsystemTable
-        rows={rows}
-        loading={loading}
-        search={filters.search ?? ''}
-        isUserFilterActive={!!filters.user}
-        onSuccess={refresh}
-      />
 
       {/* Modals */}
       <DocTypeDetailModal

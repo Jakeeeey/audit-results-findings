@@ -13,6 +13,7 @@ import type {
   CompliancePieDatum,
   AgingBucket,
   SubsystemAdherenceRecord,
+  SubsystemChartDatum,
 } from '../types';
 import { fetchSubsystemRecords } from '../providers/fetchProviders';
 
@@ -45,7 +46,7 @@ function toRow(r: SubsystemAdherenceRecord, idx: number): SubsystemTableRow {
   const daysElapsed = computeDaysElapsed(r.dateCreated);
   return {
     id:              `${r.docNumber}-${r.preparedBy}-${idx}`.replace(/\s+/g, '_'),
-    docType:         r.doctype        || 'Unknown',
+    docType:         r.docType || r.doctype || 'Unknown',
     docNo:           r.docNumber      || '',
     preparedBy:      r.preparedBy     || '',
     dateCreated:     formatDate(r.dateCreated),
@@ -56,6 +57,7 @@ function toRow(r: SubsystemAdherenceRecord, idx: number): SubsystemTableRow {
     documentStatus:  r.documentStatus || '',
     nteNo:           r.nteNo || null,
     hasRemarks:      r.hasRemarks || false,
+    subsystem:       r.subsystem || 'Unknown',
   };
 }
 
@@ -79,7 +81,9 @@ export function useSubsystemList(subsystemCode?: string) {
   useEffect(() => {
     fetchSubsystemRecords({ docType: '', user: '', dateFrom: undefined, dateTo: undefined })
       .then(records => {
-        const filtered = subsystemCode ? records.filter(r => r.subsystem === subsystemCode) : records;
+        const filtered = subsystemCode 
+          ? records.filter(r => r.subsystem?.toLowerCase() === subsystemCode.toLowerCase()) 
+          : records;
         setAllRows(filtered.map((r, idx) => toRow(r, idx)));
       })
       .catch(() => setAllRows([]));
@@ -95,7 +99,9 @@ export function useSubsystemList(subsystemCode?: string) {
         dateFrom: filters.dateFrom,
         dateTo:   filters.dateTo,
       });
-      const filtered = subsystemCode ? records.filter(r => r.subsystem === subsystemCode) : records;
+      const filtered = subsystemCode 
+        ? records.filter(r => r.subsystem?.toLowerCase() === subsystemCode.toLowerCase()) 
+        : records;
       const mapped = filtered.map((r, idx) => toRow(r, idx));
       mapped.sort((a, b) => b.rawDate.localeCompare(a.rawDate));
       setRows(mapped);
@@ -195,10 +201,33 @@ export function useSubsystemList(subsystemCode?: string) {
     return [...map.values()];
   }, [rows]);
 
-  // Per User
+  // Per Subsystem
+  const subsystemChart: SubsystemChartDatum[] = useMemo(() => {
+    const map = new Map<string, SubsystemChartDatum>();
+    for (const r of rows) {
+      const sub = r.subsystem || 'Unknown';
+      const entry = map.get(sub) ?? {
+        name:         sub,
+        total:        0,
+        compliant:    0,
+        nonCompliant: 0,
+      };
+      entry.total++;
+      if (r.adherenceStatus === 'Compliant')          entry.compliant++;
+      else if (r.adherenceStatus === 'Non-Compliant') entry.nonCompliant++;
+      map.set(sub, entry);
+    }
+    return [...map.values()];
+  }, [rows]);
+
+  // Per User (Only Non-Compliant documents)
   const userChart: UserChartDatum[] = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of rows) map.set(r.preparedBy, (map.get(r.preparedBy) ?? 0) + 1);
+    for (const r of rows) {
+      if (r.adherenceStatus === 'Non-Compliant') {
+        map.set(r.preparedBy, (map.get(r.preparedBy) ?? 0) + 1);
+      }
+    }
     return [...map.entries()].map(([name, value]) => ({ name, value }));
   }, [rows]);
 
@@ -300,6 +329,7 @@ export function useSubsystemList(subsystemCode?: string) {
     rows,
     summaryCards,
     docTypeChart,
+    subsystemChart,
     userChart,
     perDayChart,
     adherenceRateTrend,

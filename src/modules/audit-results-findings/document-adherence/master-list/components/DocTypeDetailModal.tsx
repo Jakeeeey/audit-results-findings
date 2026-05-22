@@ -6,11 +6,14 @@ import { Button } from '@/components/ui/button';
 import { AdherenceBadge } from './StatusBadge';
 import { AdherenceRemarksDialog } from './AdherenceRemarksDialog';
 import { toast } from 'sonner';
-import { FileText, X, ChevronUp, ChevronDown, ChevronsUpDown, MessageSquare, ExternalLink } from 'lucide-react';
+import { FileText, X, ChevronUp, ChevronDown, ChevronsUpDown, MessageSquare, ExternalLink, CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModuleLink } from '../hooks/useModuleLink';
 import { SearchableFilter } from './SearchableFilter';
 import type { SubsystemTableRow } from '../types';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
 
 interface Props {
   open: boolean;
@@ -41,6 +44,8 @@ export function DocTypeDetailModal({ open, onOpenChange, docType, rows, onSucces
   const [filterUser, setFilterUser] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterNte, setFilterNte] = useState('');
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
 
   const filtered = useMemo(() => {
     return rows.filter(r => {
@@ -48,27 +53,39 @@ export function DocTypeDetailModal({ open, onOpenChange, docType, rows, onSucces
       const matchUser = !filterUser || r.preparedBy === filterUser;
       const matchStatus = !filterStatus || r.documentStatus === filterStatus;
       const matchNte = !filterNte || (r.nteNo && r.nteNo.toLowerCase().includes(filterNte.toLowerCase()));
-      return matchType && matchUser && matchStatus && matchNte;
+      const matchNonCompliant = r.adherenceStatus === 'Non-Compliant';
+
+      let matchDate = true;
+      if (dateFrom || dateTo) {
+        try {
+          const rowDate = parseISO(r.rawDate.replace(' ', 'T'));
+          if (dateFrom && rowDate < startOfDay(dateFrom)) matchDate = false;
+          if (dateTo && rowDate > endOfDay(dateTo)) matchDate = false;
+        } catch {
+          // ignore
+        }
+      }
+
+      return matchType && matchUser && matchStatus && matchNte && matchNonCompliant && matchDate;
     });
-  }, [rows, docType, filterUser, filterStatus, filterNte]);
+  }, [rows, docType, filterUser, filterStatus, filterNte, dateFrom, dateTo]);
 
   const userOptions = useMemo(() => {
-    const users = rows.filter(r => r.docType === docType).map(r => r.preparedBy);
+    const users = rows.filter(r => r.docType === docType && r.adherenceStatus === 'Non-Compliant').map(r => r.preparedBy);
     return [...new Set(users)].sort();
   }, [rows, docType]);
 
   const statusOptions = useMemo(() => {
-    const statuses = rows.filter(r => r.docType === docType).map(r => r.documentStatus);
+    const statuses = rows.filter(r => r.docType === docType && r.adherenceStatus === 'Non-Compliant').map(r => r.documentStatus);
     return [...new Set(statuses)].sort();
   }, [rows, docType]);
 
   const nteOptions = useMemo(() => {
-    const ntes = rows.filter(r => r.docType === docType && r.nteNo).map(r => r.nteNo as string);
+    const ntes = rows.filter(r => r.docType === docType && r.adherenceStatus === 'Non-Compliant' && r.nteNo).map(r => r.nteNo as string);
     return [...new Set(ntes)].sort();
   }, [rows, docType]);
 
-  const compliantCount    = filtered.filter(r => r.adherenceStatus === 'Compliant').length;
-  const nonCompliantCount = filtered.filter(r => r.adherenceStatus === 'Non-Compliant').length;
+  const nonCompliantCount = filtered.length;
 
   const [sortKey, setSortKey] = useState<SortKey>('daysElapsed');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -122,10 +139,7 @@ export function DocTypeDetailModal({ open, onOpenChange, docType, rows, onSucces
                 <div>
                   <h2 className="text-sm font-semibold">{docType}</h2>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {filtered.length} record{filtered.length !== 1 ? 's' : ''} ·{' '}
-                    <span className="text-emerald-600 font-medium">{compliantCount} Compliant</span>
-                    {' · '}
-                    <span className="text-red-600 font-medium">{nonCompliantCount} Non-Compliant</span>
+                    <span className="text-red-600 font-semibold">{nonCompliantCount} Non-Compliant</span> record{nonCompliantCount !== 1 ? 's' : ''}
                   </p>
                 </div>
               </div>
@@ -164,12 +178,81 @@ export function DocTypeDetailModal({ open, onOpenChange, docType, rows, onSucces
                   placeholder="NTE No."
                 />
               </div>
-              {(filterUser || filterStatus || filterNte) && (
+
+              {/* From Date */}
+              <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 h-8 shrink-0">
+                <span className="text-[10px] font-medium text-muted-foreground shrink-0">From</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto border-0 p-0 text-[10px] focus-visible:ring-0 shadow-none w-[80px] bg-transparent font-normal"
+                    >
+                      <CalendarIcon className="w-3 h-3 mr-1 text-muted-foreground" />
+                      {dateFrom ? format(dateFrom, 'MM/dd/yyyy') : 'mm/dd/yyyy'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={dateFrom}
+                      onSelect={setDateFrom}
+                      disabled={date => !!dateTo && date > dateTo}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                {dateFrom && (
+                  <button onClick={() => setDateFrom(undefined)} className="text-muted-foreground hover:text-foreground">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* To Date */}
+              <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 h-8 shrink-0">
+                <span className="text-[10px] font-medium text-muted-foreground shrink-0">To</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto border-0 p-0 text-[10px] focus-visible:ring-0 shadow-none w-[80px] bg-transparent font-normal"
+                    >
+                      <CalendarIcon className="w-3 h-3 mr-1 text-muted-foreground" />
+                      {dateTo ? format(dateTo, 'MM/dd/yyyy') : 'mm/dd/yyyy'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={dateTo}
+                      onSelect={setDateTo}
+                      disabled={date => !!dateFrom && date < dateFrom}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                {dateTo && (
+                  <button onClick={() => setDateTo(undefined)} className="text-muted-foreground hover:text-foreground">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                )}
+              </div>
+
+              {(filterUser || filterStatus || filterNte || dateFrom || dateTo) && (
                 <Button 
                   variant="ghost" 
                   size="sm" 
                   className="h-8 text-[10px] text-muted-foreground hover:text-foreground"
-                  onClick={() => { setFilterUser(''); setFilterStatus(''); setFilterNte(''); }}
+                  onClick={() => {
+                    setFilterUser('');
+                    setFilterStatus('');
+                    setFilterNte('');
+                    setDateFrom(undefined);
+                    setDateTo(undefined);
+                  }}
                 >
                   <X className="w-3 h-3 mr-1" />
                   Clear Filters
