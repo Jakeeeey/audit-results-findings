@@ -49,7 +49,6 @@ export function Preloader() {
                                 src={vosLogo}
                                 alt="VOS Logo"
                                 fill
-                                sizes="(max-width: 768px) 128px, 160px"
                                 className="object-contain p-4 drop-shadow-[0_0_15px_rgba(6,182,212,0.3)]"
                                 priority
                             />
