@@ -1449,6 +1449,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 header={header}
                 status={status}
                 canEdit={canEdit}
+                hasLoadedDetails={hasLoadedDetails}
                 totalAmount={totalAmount}
                 onChangePhNo={(value) =>
                     setHeader((prev) => (prev ? { ...prev, ph_no: value } : prev))

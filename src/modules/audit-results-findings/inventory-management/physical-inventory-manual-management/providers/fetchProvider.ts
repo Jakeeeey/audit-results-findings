@@ -249,7 +249,6 @@ export function getSupplierScopedCategoriesFromLookup(
         lookup.products
             .filter(
                 (product) =>
-                    product.isActive === 1 &&
                     allowedProductIds.has(product.product_id) &&
                     product.product_category !== null,
             )
@@ -391,69 +390,89 @@ export function buildEligibleVariants(input: {
     lookup: ProductLookupBundle;
 }): EligibleVariantRow[] {
     const { supplierId, categoryId, priceTypeId, lookup } = input;
+    const sId = Number(supplierId);
+    const cId = Number(categoryId);
+    const pId = Number(priceTypeId);
 
     const selectedCategory = lookup.categories.find(
-        (row) => row.category_id === categoryId,
+        (row) => Number(row.category_id) === cId,
     );
     const isAllCategory = isAllCategoryName(selectedCategory?.category_name);
 
-    const productIdsBySupplier = new Set(
+    const directlyEligibleBySupplier = new Set(
         lookup.product_per_supplier
-            .filter((row) => row.supplier_id === supplierId)
-            .map((row) => row.product_id),
+            .filter((row) => Number(row.supplier_id) === sId)
+            .map((row) => Number(row.product_id)),
     );
+
+    // If any member of a family is mapped to the supplier, the whole family is considered eligible
+    const eligibleFamilyKeys = new Set<number>();
+    for (const productId of directlyEligibleBySupplier) {
+        const product = lookup.products.find((p) => Number(p.product_id) === productId);
+        if (product) {
+            eligibleFamilyKeys.add(
+                Number(product.parent_id && product.parent_id > 0
+                    ? product.parent_id
+                    : product.product_id)
+            );
+        }
+    }
 
     const priceMap = new Map<number, ProductPerPriceTypeRow>();
     for (const row of lookup.product_per_price_type) {
-        if (row.price_type_id === priceTypeId) {
-            priceMap.set(row.product_id, row);
+        if (Number(row.price_type_id) === pId) {
+            priceMap.set(Number(row.product_id), row);
         }
     }
 
     const categoryMap = new Map<number, CategoryRow>();
     for (const row of lookup.categories) {
-        categoryMap.set(row.category_id, row);
+        categoryMap.set(Number(row.category_id), row);
     }
 
     const unitMap = new Map<number, UnitRow>();
     for (const row of lookup.units) {
-        unitMap.set(row.unit_id, row);
+        unitMap.set(Number(row.unit_id), row);
     }
 
     return lookup.products
-        .filter((product) => product.isActive === 1)
-        .filter((product) => productIdsBySupplier.has(product.product_id))
+        .filter((product) => {
+            const familyKey = Number(product.parent_id && product.parent_id > 0
+                ? product.parent_id
+                : product.product_id);
+            return eligibleFamilyKeys.has(familyKey);
+        })
         .filter((product) => {
             if (isAllCategory) return true;
-            return product.product_category === categoryId;
+            return Number(product.product_category) === cId;
         })
-        .filter((product) => priceMap.has(product.product_id))
         .map((product) => {
-            const priceRow = priceMap.get(product.product_id) ?? null;
+            const productIdNum = Number(product.product_id);
+            const priceRow = priceMap.get(productIdNum) ?? null;
             const category =
                 product.product_category !== null
-                    ? categoryMap.get(product.product_category) ?? null
+                    ? categoryMap.get(Number(product.product_category)) ?? null
                     : null;
             const unit =
                 product.unit_of_measurement !== null
-                    ? unitMap.get(product.unit_of_measurement) ?? null
+                    ? unitMap.get(Number(product.unit_of_measurement)) ?? null
                     : null;
 
             return {
-                product_id: product.product_id,
-                parent_id: product.parent_id,
+                product_id: productIdNum,
+                parent_id: product.parent_id ? Number(product.parent_id) : null,
                 product_code: product.product_code,
                 product_name: product.product_name,
                 barcode: product.barcode,
-                category_id: product.product_category,
+                category_id: product.product_category ? Number(product.product_category) : null,
                 category_name: category?.category_name ?? null,
-                unit_id: product.unit_of_measurement,
+                unit_id: product.unit_of_measurement ? Number(product.unit_of_measurement) : null,
                 unit_name: unit?.unit_name ?? null,
                 unit_shortcut: unit?.unit_shortcut ?? null,
-                unit_order: unit?.order ?? null,
+                unit_order: unit?.order ? Number(unit.order) : null,
                 unit_count: normalizeUnitCount(product.unit_of_measurement_count),
                 unit_price: priceRow?.price ?? null,
-                cost_per_unit: product.cost_per_unit,
+                cost_per_unit: product.cost_per_unit ? Number(product.cost_per_unit) : null,
                 brand_name: null,
             };
         })
