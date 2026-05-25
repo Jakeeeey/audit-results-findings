@@ -419,18 +419,17 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             const activeRunningInventoryRows =
                 input?.nextRunningInventoryRows ?? runningInventoryRows;
 
-            if (
-                !activeLookup ||
-                !activeFilters.branch_id ||
-                !activeFilters.supplier_id ||
-                !activeFilters.category_id ||
-                !activeFilters.price_type_id
-            ) {
+            if (!activeLookup || !activeFilters.branch_id) {
                 setGroupedRows([]);
                 return;
             }
 
-            if (activeDetails.length === 0) {
+            if (
+                activeDetails.length === 0 &&
+                (!activeFilters.supplier_id ||
+                    !activeFilters.category_id ||
+                    !activeFilters.price_type_id)
+            ) {
                 setGroupedRows([]);
                 return;
             }
@@ -679,13 +678,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
 
                     setRunningInventoryRows(nextRunningRows);
 
-                    if (
-                        nextFilters.branch_id &&
-                        nextFilters.supplier_id &&
-                        nextFilters.category_id &&
-                        nextFilters.price_type_id &&
-                        existingDetails.length > 0
-                    ) {
+                    if (nextFilters.branch_id && existingDetails.length > 0) {
                         const variants = buildVariantsFromSavedDetails({
                             details: existingDetails,
                             priceTypeId: nextFilters.price_type_id,
@@ -812,8 +805,10 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             !filters.category_id ||
             !filters.price_type_id
         ) {
-            setRunningInventoryRows([]);
-            setGroupedRows([]);
+            if (!hasLoadedDetails) {
+                setRunningInventoryRows([]);
+                setGroupedRows([]);
+            }
             return;
         }
 
@@ -833,6 +828,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         lookupBundle,
         refreshRunningInventoryReadModel,
         header?.cutOff_date,
+        hasLoadedDetails,
     ]);
 
     React.useEffect(() => {
@@ -844,7 +840,9 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             !filters.category_id ||
             !filters.price_type_id
         ) {
-            setGroupedRows([]);
+            if (!hasLoadedDetails) {
+                setGroupedRows([]);
+            }
             return;
         }
 
@@ -858,6 +856,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         isBootLoading,
         lookupBundle,
         runningInventoryRows,
+        hasLoadedDetails,
     ]);
 
     React.useEffect(() => {
