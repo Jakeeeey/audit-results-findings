@@ -8,7 +8,7 @@ import { AdherenceBadge } from './StatusBadge';
 import { AdherenceRemarksDialog } from './AdherenceRemarksDialog';
 import { NTEConfirmationDialog } from './NTEConfirmationDialog';
 import { toast } from 'sonner';
-import { Loader2, User, X, ChevronUp, ChevronDown, ChevronsUpDown, MessageSquare, ExternalLink, CalendarIcon, Copy } from 'lucide-react';
+import { Loader2, User, X, ChevronUp, ChevronDown, ChevronsUpDown, MessageSquare, ExternalLink, CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModuleLink } from '../hooks/useModuleLink';
 import { SearchableFilter } from './SearchableFilter';
@@ -420,23 +420,17 @@ export function UserDetailModal({ open, onOpenChange, userName, rows, onSuccess 
                           return (
                             <button
                               onClick={() => {
-                                navigator.clipboard.writeText(row.docNo);
-                                toast.success(`Copied ${row.docNo} to clipboard`);
-                                if (link) {
-                                  // Add a small delay so the user can see the toast before the redirect/new tab focus
-                                  setTimeout(() => openDocLink(row.docType, row.docNo), 150);
-                                } else {
-                                  toast.error(`No module link configured for "${row.docType}"`);
-                                }
+                                if (link) openDocLink(row.docType, row.docNo);
+                                else toast.error(`No module link configured for "${row.docType}"`);
                               }}
                               className={cn(
                                 "inline-flex items-center gap-0.5 group transition-colors",
                                 link ? "text-primary hover:underline" : "text-muted-foreground hover:text-foreground"
                               )}
-                              title={link ? `Copy and open ${row.docNo}` : `Copy ${row.docNo}`}
+                              title={link ? `Open ${row.docNo} in new tab` : `No link configured for ${row.docType}`}
                             >
                               {row.docNo}
-                              <Copy className="w-2.5 h-2.5 opacity-0 group-hover:opacity-70 transition-opacity" />
+                              {link && <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-70 transition-opacity" />}
                             </button>
                           );
                         })()}
