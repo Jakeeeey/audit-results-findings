@@ -94,7 +94,9 @@ export async function fetchMovements(filters: ProductTracingFiltersType): Promis
     if (filters.startDate) params.set("startDate", String(filters.startDate));
     if (filters.endDate) params.set("endDate", String(filters.endDate));
 
-    const res = await fetch(`/api/arf/traceability-compliance/product-tracing?${params.toString()}`);
+    const res = await fetch(`/api/arf/traceability-compliance/product-tracing?${params.toString()}`, {
+        cache: "no-store",
+    });
     if (!res.ok) {
         throw new Error("Failed to fetch movements");
     }

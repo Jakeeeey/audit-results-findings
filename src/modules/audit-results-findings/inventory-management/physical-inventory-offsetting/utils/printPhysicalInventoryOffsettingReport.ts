@@ -152,6 +152,31 @@ function renderFindingsSectionRows(
     return html;
 }
 
+function renderOffsetGroupProduct(row: OffsettingSelectableRow | undefined): string {
+    if (!row) {
+        return `<span class="empty-inline">—</span>`;
+    }
+
+    return `
+        <div class="product-item wrap-text" title="${escapeHtml(row.product_label)}">
+            <span class="product-name">${escapeHtml(row.product_label)}</span>
+            <span class="product-row-meta">
+                <span class="product-variance">
+                    (${fmtNumber(Math.abs(row.variance_base ?? row.variance ?? 0))} ${escapeHtml(row.unit_shortcut || row.unit_name || "PCS")})
+                </span>
+            </span>
+        </div>
+    `;
+}
+
+function renderOffsetGroupAmount(row: OffsettingSelectableRow | undefined): string {
+    if (!row) {
+        return `<span class="empty-inline">—</span>`;
+    }
+
+    return moneyCell(row.selection_amount, "offset");
+}
+
 function renderOffsetGroups(groups: PhysicalInventoryOffsetGroup[]): string {
     if (!groups.length) {
         return `
@@ -163,36 +188,47 @@ function renderOffsetGroups(groups: PhysicalInventoryOffsetGroup[]): string {
 
     return groups
         .map((group, index) => {
-            const shortLabels = group.short_rows
-                .map(
-                    (row) => `
-                        <div class="product-item wrap-text" title="${escapeHtml(row.product_label)}">
-                            <span class="product-name">${escapeHtml(row.product_label)}</span>
-                            <span class="product-variance">(${fmtNumber(Math.abs(row.variance_base ?? row.variance ?? 0))} ${escapeHtml(row.unit_shortcut || row.unit_name || "PCS")})</span>
-                        </div>
-                    `,
-                )
-                .join("");
+            const rowCount = Math.max(group.short_rows.length, group.over_rows.length, 1);
 
-            const overLabels = group.over_rows
-                .map(
-                    (row) => `
-                        <div class="product-item wrap-text" title="${escapeHtml(row.product_label)}">
-                            <span class="product-name">${escapeHtml(row.product_label)}</span>
-                            <span class="product-variance">(${fmtNumber(Math.abs(row.variance_base ?? row.variance ?? 0))} ${escapeHtml(row.unit_shortcut || row.unit_name || "PCS")})</span>
-                        </div>
-                    `,
-                )
-                .join("");
+            const detailRows = Array.from({ length: rowCount }, (_, rowIndex) => {
+                const shortRow = group.short_rows[rowIndex];
+                const overRow = group.over_rows[rowIndex];
+
+                const offsetCell =
+                    rowIndex === 0
+                        ? `
+                            <td class="offset-col" rowspan="${rowCount + 1}">
+                                <div class="group-title">Offset ${index + 1}</div>
+                                <div class="group-date">${fmtDate(group.created_at)}</div>
+                            </td>
+                        `
+                        : "";
+
+                const differenceCell =
+                    rowIndex === 0
+                        ? `
+                            <td class="text-right offset-difference-cell" rowspan="${rowCount}">
+                                ${moneyCell(group.difference, "offset")}
+                            </td>
+                        `
+                        : "";
+
+                return `
+                    <tr class="offset-detail-row">
+                        ${offsetCell}
+                        <td class="offset-rows-cell">${renderOffsetGroupProduct(shortRow)}</td>
+                        <td class="offset-rows-cell">${renderOffsetGroupProduct(overRow)}</td>
+                        <td class="text-right">${renderOffsetGroupAmount(shortRow)}</td>
+                        <td class="text-right">${renderOffsetGroupAmount(overRow)}</td>
+                        ${differenceCell}
+                    </tr>
+                `;
+            }).join("");
 
             return `
-                <tr>
-                    <td class="offset-col">
-                        <div class="group-title">Offset ${index + 1}</div>
-                        <div class="group-date">${fmtDate(group.created_at)}</div>
-                    </td>
-                    <td class="offset-rows-cell">${shortLabels}</td>
-                    <td class="offset-rows-cell">${overLabels}</td>
+                ${detailRows}
+                <tr class="offset-total-row">
+                    <td class="text-right total-label" colspan="2">Totals</td>
                     <td class="text-right">${moneyCell(group.short_total, "offset")}</td>
                     <td class="text-right">${moneyCell(group.over_total, "offset")}</td>
                     <td class="text-right">${moneyCell(group.difference, "offset")}</td>
@@ -201,7 +237,6 @@ function renderOffsetGroups(groups: PhysicalInventoryOffsetGroup[]): string {
         })
         .join("");
 }
-
 export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
     const {
         header,
@@ -221,13 +256,25 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
 
     const groupedShortAmount = offsetGroups.reduce((acc, group) => acc + group.short_total, 0);
     const groupedOverAmount = offsetGroups.reduce((acc, group) => acc + group.over_total, 0);
-    const netUnresolvedAmount = unresolvedShortAmount - unresolvedOverAmount;
+
+    let adjustedUnresolvedShort = unresolvedShortAmount;
+    let adjustedUnresolvedOver = unresolvedOverAmount;
+
+    for (const group of offsetGroups) {
+        if (group.difference < 0) {
+            adjustedUnresolvedShort += group.difference;
+        } else if (group.difference > 0) {
+            adjustedUnresolvedOver += group.difference;
+        }
+    }
+
+    const netUnresolvedAmount = adjustedUnresolvedShort - adjustedUnresolvedOver;
 
     const findingsNarrative = [
         `The reconciliation identified ${allShortRows.length} shortage row${allShortRows.length === 1 ? "" : "s"} with a total exposure of ₱ ${fmtMoney(totalShortAmount)}.`,
         `The reconciliation identified ${allOverRows.length} overage row${allOverRows.length === 1 ? "" : "s"} with a total value of ₱ ${fmtMoney(totalOverAmount)}.`,
         `A total of ${offsetGroups.length} manual offset group${offsetGroups.length === 1 ? "" : "s"} were created during review.`,
-        `Remaining unresolved short findings total ₱ ${fmtMoney(unresolvedShortAmount)}, while unresolved over findings total ₱ ${fmtMoney(unresolvedOverAmount)}.`,
+        `Remaining unresolved short findings total ₱ ${fmtMoney(adjustedUnresolvedShort)}, while unresolved over findings total ₱ ${fmtMoney(adjustedUnresolvedOver)}.`,
         `The current net unresolved variance is ₱ ${fmtMoney(netUnresolvedAmount)} and remains subject to further warehouse validation where applicable.`,
     ];
 
@@ -483,6 +530,21 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
             font-weight: 400;
         }
 
+        .product-row-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .product-amount {
+            font-size: 10px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            color: var(--text);
+            white-space: nowrap;
+        }
+
         .product-item + .product-item {
             border-top: 1px solid #e5e7eb;
         }
@@ -569,54 +631,115 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         .w-amount { width: 10%; }
 
         .audit-cell {
-            padding: 0 !important;
-            height: 1px; /* Trick to allow 100% height in children */
-        }
-        .audit-grid {
-            display: flex;
-            align-items: stretch;
-            justify-content: center;
-            height: 100%;
-            width: 100%;
-        }
-        .audit-counts {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            justify-content: center;
-            padding: 4px 0;
-            flex: 1;
-        }
-        .audit-divider {
-            width: 100%;
-            border-top: 1px solid #999;
-            margin: 0;
-        }
-        .audit-variance {
-            border-left: 1px solid #999;
-            padding: 0 8px;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            font-weight: 700;
-            min-width: 42px;
-        }
-        .audit-system { color: var(--muted); font-size: 8.5px; padding-right: 8px; line-height: 1.2; }
-        .audit-physical { font-weight: normal; padding-right: 8px; line-height: 1.2; }
-        .audit-label {
-            font-size: 7.5px;
-            color: var(--muted);
-            margin-right: 3px;
-            font-weight: normal;
-            font-variant-caps: all-small-caps;
-        }
+    padding: 0 !important;
+    height: 1px;
+    vertical-align: middle;
+}
 
-        .w-offset { width: 13%; }
-        .w-shortrows { width: 18%; }
-        .w-overrows { width: 18%; }
-        .w-shorttotal { width: 16%; }
-        .w-overtotal { width: 16%; }
-        .w-difference { width: 15%; }
+.audit-grid {
+    display: grid;
+    grid-template-columns: minmax(64px, 1fr) minmax(48px, auto);
+    grid-template-rows: 1fr 1fr;
+    width: 100%;
+    height: 100%;
+    min-height: 40px;
+}
+
+.audit-counts {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    height: 100%;
+}
+
+.audit-system,
+.audit-physical {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 2px 8px 2px 4px;
+    line-height: 1.1;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.audit-system {
+    color: var(--muted);
+    font-size: 8.5px;
+    border-bottom: 1px solid #999;
+}
+
+.audit-physical {
+    font-weight: normal;
+    font-size: 9px;
+}
+
+.audit-divider {
+    display: none;
+}
+
+.audit-variance {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    border-left: 1px solid #999;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    font-weight: 700;
+    min-width: 48px;
+    height: 100%;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.audit-label {
+    font-size: 7.5px;
+    color: var(--muted);
+    margin-right: 3px;
+    font-weight: normal;
+    font-variant-caps: all-small-caps;
+}
+
+.w-offset { width: 13%; }
+.w-shortrows { width: 24%; }
+.w-overrows { width: 24%; }
+.w-shortamount { width: 13%; }
+.w-overamount { width: 13%; }
+.w-difference { width: 13%; }
+
+.offset-detail-row td {
+    vertical-align: top;
+}
+
+.offset-total-row td {
+    background: #f8fafc;
+    font-weight: 700;
+    border-top: 2px solid var(--border);
+}
+
+.total-label {
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 9.5px;
+}
+
+.empty-inline {
+    color: var(--muted);
+    opacity: 0.6;
+}
+
+.offset-difference-cell {
+    vertical-align: middle !important;
+    font-weight: 700;
+    background: #ffffff;
+}
+
+.offset-difference-cell .money-offset {
+    min-width: 100px;
+}
 
         @media print {
             @page {
@@ -798,15 +921,15 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         <h3 class="section-title">Manual Offsetting Summary</h3>
         <table class="offset-table">
             <thead>
-                <tr>
-                    <th class="w-offset">Offset</th>
-                    <th class="w-shortrows">Short Rows</th>
-                    <th class="w-overrows">Over Rows</th>
-                    <th class="w-shorttotal text-right">Short Total</th>
-                    <th class="w-overtotal text-right">Over Total</th>
-                    <th class="w-difference text-right">Difference</th>
-                </tr>
-            </thead>
+    <tr>
+        <th class="w-offset">Offset</th>
+        <th class="w-shortrows">Short Rows</th>
+        <th class="w-overrows">Over Rows</th>
+        <th class="w-shortamount text-right">Short Amount</th>
+        <th class="w-overamount text-right">Over Amount</th>
+        <th class="w-difference text-right">Difference</th>
+    </tr>
+</thead>
             <tbody>
                 ${renderOffsetGroups(offsetGroups)}
             </tbody>

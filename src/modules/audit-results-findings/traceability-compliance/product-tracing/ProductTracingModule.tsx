@@ -46,6 +46,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
 
     const handleFilterChange = (newFilters: Partial<ProductTracingFiltersType>) => {
         setFilters(prev => ({ ...prev, ...newFilters }));
+        setHasSearched(false);
     };
 
     const handleReset = () => {
@@ -117,13 +118,24 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
             }
 
             return true;
-        });
+        }).map(row => ({ ...row })); // Clone objects to prevent mutating state!
 
         // Sort chronologically so that firstPHIndex correctly identifies the very first historical Phase
         validMovements.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
 
-        // The user requested that the beginning balance should be derived solely from the first PH.
-        // Therefore, we ignore any non-PH transactions that occurred *before* the first ever PH.
+        const getMovement = (row: ProductMovementRow) => {
+            const isPH = row.docType === "Physical Inventory" || row.docNo?.startsWith("PH");
+            if (isPH) {
+                // Handle both camelCase and snake_case for API compatibility
+                const phys = row.physical_count !== undefined ? row.physical_count : row.physicalCount;
+                const sys = row.system_count !== undefined ? row.system_count : row.systemCount;
+                // Use API variance if injected, otherwise calculate
+                const calcVariance = row.variance ?? ((phys || 0) - (sys || 0));
+                return calcVariance * (row.unitCount || 1);
+            }
+            return ((row.inBase || 0) - (row.outBase || 0));
+        };
+
         const firstPHIndex = validMovements.findIndex(row => {
             const isPH = row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH");
             if (!isPH) return false;
@@ -132,20 +144,82 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
             if (start && new Date(row.ts) >= start) return false;
             return true;
         });
+
+        // ── Global Family Balance Consolidation ──
+        // Instead of retroactively applying deltas in the UI (which breaks when date filters hide the present),
+        // we compute the missing family inventory delta from the FULL ledger and apply it to the absolute beginning balance.
+        let fullLedgerDelta = 0;
+        if (familyRunningTotal > 0 && movements.length > 0) {
+            let fullLedger = movements.filter(row => {
+                if (filters.branch_id && row.branchId !== filters.branch_id) return false;
+                if (filters.parent_id && row.productId !== filters.parent_id && row.parentId !== filters.parent_id) return false;
+                return true;
+            }).map(row => ({ ...row }));
+            
+            fullLedger.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+            const fullFirstPH = fullLedger.findIndex(row => row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH"));
+            
+            if (fullFirstPH > -1) {
+                let dropCount = 0;
+                for (let i = 0; i < fullFirstPH; i++) dropCount += getMovement(fullLedger[i]);
+                fullLedger = fullLedger.slice(fullFirstPH);
+                let injected = false;
+                const fDoc = fullLedger[0].docNo;
+                fullLedger.forEach(row => {
+                    if (row.docNo === fDoc) {
+                        const phys = row.physical_count !== undefined ? row.physical_count : row.physicalCount;
+                        const sys = row.system_count !== undefined ? row.system_count : row.systemCount;
+                        const originalVariance = row.variance ?? ((phys || 0) - (sys || 0));
+                        if (!injected) {
+                            row.variance = originalVariance + (dropCount / (row.unitCount || 1));
+                            injected = true;
+                        } else {
+                            row.variance = originalVariance;
+                        }
+                    }
+                });
+            }
+            
+            let ledgerTotal = 0;
+            fullLedger.forEach(row => ledgerTotal += getMovement(row));
+            
+            const delta = familyRunningTotal - ledgerTotal;
+            if (Math.abs(delta) >= 1) fullLedgerDelta = delta;
+        }
+
         if (firstPHIndex > -1) {
+            // Calculate the total system count (in base units) that we are about to drop
+            let droppedSystemCountBase = 0;
+            for (let i = 0; i < firstPHIndex; i++) {
+                droppedSystemCountBase += getMovement(validMovements[i]);
+            }
+
             validMovements = validMovements.slice(firstPHIndex);
             
             // Override the variance for the first PH since its baseline system count is no longer valid
-            // due to us dropping the prior history. Its variance should purely be its physical count.
+            // due to us dropping the prior history. Its variance should mathematically absorb the dropped history.
             const firstPHDocNo = validMovements[0].docNo;
+            let injected = false;
+
             validMovements.forEach(row => {
                 if (row.docNo === firstPHDocNo) {
                     const phys = row.physical_count !== undefined ? row.physical_count : row.physicalCount;
-                    if (phys !== undefined) {
-                        row.variance = Number(phys);
-                        row.system_count = 0;
-                        row.systemCount = 0;
+                    const sys = row.system_count !== undefined ? row.system_count : row.systemCount;
+                    const originalVariance = row.variance ?? ((phys || 0) - (sys || 0));
+                    
+                    let newVariance = originalVariance;
+                    
+                    if (!injected) {
+                        const unitCount = row.unitCount || 1;
+                        newVariance = originalVariance + (droppedSystemCountBase / unitCount);
+                        injected = true;
                     }
+                    
+                    row.variance = newVariance;
+                    row.system_count = 0;
+                    row.systemCount = 0;
+                    row.physical_count = newVariance;
+                    row.physicalCount = newVariance;
                 }
             });
         }
@@ -161,19 +235,6 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
         });
 
         const divisor = validMovements[0]?.familyUnitCount || 1;
-
-        const getMovement = (row: ProductMovementRow) => {
-            const isPH = row.docType === "Physical Inventory" || row.docNo?.startsWith("PH");
-            if (isPH) {
-                // Handle both camelCase and snake_case for API compatibility
-                const phys = row.physical_count !== undefined ? row.physical_count : row.physicalCount;
-                const sys = row.system_count !== undefined ? row.system_count : row.systemCount;
-                // Use API variance if injected, otherwise calculate
-                const calcVariance = row.variance ?? ((phys || 0) - (sys || 0));
-                return calcVariance * (row.unitCount || 1);
-            }
-            return ((row.inBase || 0) - (row.outBase || 0));
-        };
 
         const totalInBase = filtered.reduce((acc, row) => {
             const m = getMovement(row);
@@ -199,6 +260,9 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
         historical.forEach(row => {
             beginningBaseBalance += getMovement(row);
         });
+
+        // 3. Apply the global family inventory offset so the history perfectly aligns with reality
+        beginningBaseBalance += fullLedgerDelta;
 
         // Initialize breakdown for display
         validMovements.forEach(row => {
@@ -237,7 +301,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
         unit: validMovements.find(r => r.unitCount === (divisor || 1))?.unit || validMovements[0]?.familyUnit || "Box",
         isLiveRange
     };
-}, [movements, filters.startDate, filters.endDate, filters.branch_id, filters.parent_id, filters.dateRangeMode]);
+}, [movements, familyRunningTotal, filters.startDate, filters.endDate, filters.branch_id, filters.parent_id, filters.dateRangeMode]);
 
     const currentUnit = stats?.unit || "Units";
     const currentDivisor = stats?.divisor || 1;
