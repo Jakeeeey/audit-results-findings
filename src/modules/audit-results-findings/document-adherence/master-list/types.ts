@@ -1,7 +1,8 @@
 // ─── Raw API Response ─────────────────────────────────────────────────────────
 
 export interface SubsystemAdherenceRecord {
-  doctype:         string;
+  docType?:        string;
+  doctype?:        string;
   docNumber:       string;
   preparedBy:      string;
   dateCreated:     string;
@@ -15,6 +16,7 @@ export interface SubsystemAdherenceRecord {
   nteNo?:          string | null;
   nteStatus?:      string | null;
   nteRemarks?:     string | null;
+  nteFileId?:      string | null;
   hasRemarks?:     boolean;
 }
 
@@ -58,13 +60,22 @@ export interface SubsystemTableRow {
   adherenceStatus: string;
   documentStatus:  string;
   nteNo?:          string | null;
+  nteFileId?:      string | null;
   hasRemarks?:     boolean;
+  subsystem?:      string;
 }
 
 // ─── Chart ────────────────────────────────────────────────────────────────────
 
 export interface DocTypeChartDatum {
   name:         string;
+  compliant:    number;
+  nonCompliant: number;
+}
+
+export interface SubsystemChartDatum {
+  name:         string;
+  total:        number;
   compliant:    number;
   nonCompliant: number;
 }

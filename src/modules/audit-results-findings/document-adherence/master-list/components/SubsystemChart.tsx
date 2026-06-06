@@ -6,41 +6,39 @@ import {
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartEmptyState } from './ChartEmptyState';
-import type { DocTypeChartDatum } from '../types';
+import type { SubsystemChartDatum } from '../types';
 
 const COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#f97316', '#06b6d4', '#a855f7', '#14b8a6',
+  '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#3b82f6',
+  '#f59e0b', '#06b6d4', '#a855f7', '#14b8a6', '#6366f1',
 ];
 
-interface Props { 
-  data: DocTypeChartDatum[];
-  onBarClick?: (docType: string) => void;
+interface Props {
+  data: SubsystemChartDatum[];
+  onBarClick?: (subsystem: string) => void;
 }
 
-export function SubsystemDocTypeChart({ data, onBarClick }: Props) {
-  const sortedData = [...data]
-    .filter(d => d.nonCompliant > 0)
-    .sort((a, b) => b.nonCompliant - a.nonCompliant);
+export function SubsystemAnalyticsChart({ data, onBarClick }: Props) {
+  const sortedData = [...data].sort((a, b) => b.total - a.total);
 
   return (
     <Card className="shadow-none border-border">
       <CardHeader className="border-b border-border/50 pb-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          Non-Compliant by Doc Type
+          Adherence by Subsystem
           {onBarClick && (
             <span className="text-[10px] font-normal text-muted-foreground">
-              — click a bar to view list
+              — click a bar to view subsystem details
             </span>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
-        {sortedData.length === 0 ? (
-          <ChartEmptyState label="non-compliant doc types" />
+        {data.length === 0 ? (
+          <ChartEmptyState label="subsystems" />
         ) : (
-          <ResponsiveContainer width="100%" height={Math.max(260, sortedData.length * 35 + 50)}>
-            <BarChart 
+          <ResponsiveContainer width="100%" height={Math.max(300, sortedData.length * 35 + 50)}>
+            <BarChart
               data={sortedData}
               layout="vertical"
               margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
@@ -57,47 +55,55 @@ export function SubsystemDocTypeChart({ data, onBarClick }: Props) {
                 vertical={false}
                 stroke="rgba(128,128,128,0.1)"
               />
-              <XAxis
+              <XAxis 
                 type="number"
                 tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
                 tickLine={false}
                 axisLine={false}
                 allowDecimals={false}
               />
-              <YAxis
-                dataKey="name"
+              <YAxis 
+                dataKey="name" 
                 type="category"
                 tick={{ fontSize: 11, fontWeight: 600, fill: 'hsl(var(--foreground))' }}
                 tickLine={false}
                 axisLine={false}
                 width={80}
+                tickFormatter={(value) => {
+                  if (typeof value !== 'string') return value;
+                  return value.length > 12 ? `${value.substring(0, 10)}...` : value;
+                }}
               />
               <Tooltip
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
-                  const item = payload[0].payload as DocTypeChartDatum;
+                  const item = payload[0].payload as SubsystemChartDatum;
                   return (
-                    <div className="bg-popover border border-border rounded-md shadow-md px-2.5 py-1.5 text-xs">
+                     <div className="bg-popover border border-border rounded-md shadow-md px-2.5 py-1.5 text-xs">
                       <p className="font-semibold text-foreground">{item.name}</p>
-                      <p className="text-red-600 mt-0.5 font-medium">
-                        Non-Compliant: <span className="font-bold">{item.nonCompliant}</span>
+                      <p className="text-muted-foreground mt-0.5">
+                        Total: <span className="font-bold text-foreground">{item.total}</span>
                       </p>
-                      {onBarClick && <p className="text-primary mt-1 text-[10px]">Click to view non-compliant documents</p>}
+                      <div className="flex gap-2 mt-1 text-[10px]">
+                        <span className="text-emerald-600 font-medium">Compliant: {item.compliant}</span>
+                        <span className="text-red-600 font-medium">Non-Compliant: {item.nonCompliant}</span>
+                      </div>
+                      {onBarClick && <p className="text-primary mt-1 text-[10px]">Click to view details</p>}
                     </div>
                   );
                 }}
                 cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
               />
               <Bar
-                dataKey="nonCompliant"
-                name="Non-Compliant Documents"
+                dataKey="total"
+                name="Total Documents"
                 radius={[0, 4, 4, 0]}
                 barSize={20}
               >
                 {sortedData.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
-                <LabelList dataKey="nonCompliant" position="right" style={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))', fontWeight: 600 }} />
+                <LabelList dataKey="total" position="right" style={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))', fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
