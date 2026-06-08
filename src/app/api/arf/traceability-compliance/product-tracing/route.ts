@@ -33,8 +33,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const parentId = incomingUrl.searchParams.get("parentId") ?? "";
         const branchName = incomingUrl.searchParams.get("branchName") ?? "";
         const productName = incomingUrl.searchParams.get("productName") ?? "";
-        const startDate = incomingUrl.searchParams.get("startDate") ?? "";
-        const endDate = incomingUrl.searchParams.get("endDate") ?? "";
+
 
         // Use the /filter endpoint to get full history for the branch/product
         const targetUrl = new URL(
@@ -69,22 +68,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // Patching Layer: Supplemental data for Consolidated Documents & Physical Inventory Counts
         if (Array.isArray(data) && parentId) {
             try {
-                const { fetchConsolidationItems, fetchPHCountsForTracing, fetchAllFamilyPHs } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
+                const { fetchConsolidationItems, fetchPHCountsForTracing, fetchAllFamilyPHs, getFamilyUnit } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
+                const famUnit = await getFamilyUnit(parentId);
 
                 // 0. Proactively fetch ALL relevant PH documents for this family/branch from Directus.
-                // This bridges the gap where the Spring movement view omits PH records that have 0 variance.
+                // This bridges the gap where the Spring movement view omits PH records that have 0 variance,
+                // and avoids duplicate unpatched PH rows from Spring Boot.
                 const allFamilyPhs: Map<string, unknown[]> | null = await fetchAllFamilyPHs(branchId, parentId);
                 const phRegistry = new Map<string, { seenIds: Set<string>, template: Record<string, unknown> | null, phDetails: unknown[] }>();
 
-                // Pre-populate registry with proactive data to ensure they appear in the ledger
+                // Pre-populate registry with proactive data to ensure ALL historical PH records appear in the ledger
                 if (allFamilyPhs) {
                     allFamilyPhs.forEach((details: unknown[], phNo: string) => {
-                        const firstDetail = details[0] as { ph_id?: { date_encoded?: string } };
-                        const ts = firstDetail?.ph_id?.date_encoded;
-                        // Basic date filtering to match the query range if provided
-                        if (startDate && ts && ts < startDate) return;
-                        if (endDate && ts && ts > endDate) return;
-
                         phRegistry.set(phNo, {
                             seenIds: new Set(),
                             template: null,
@@ -93,6 +88,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     });
                 }
 
+                // Preserve Spring Boot's movement rows (including PH rows) so that we retain the true database variance and box information,
+                // while allFamilyPhs and phRegistry will supplement any 0-variance PH records that Spring Boot omitted entirely.
+                const nonPhData = [...data];
+
                 // Per-request cache to avoid redundant calls for same docNo in the ledger
                 const consolidationCache = new Map<string, unknown[]>();
                 const phCache = new Map<string, unknown[]>();
@@ -100,7 +99,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 const patchedConsolidations = new Set<string>();
                 const docExistingOutBase = new Map<string, number>();
 
-                data.forEach((row: { docType?: string; docNo?: string; outBase?: number }) => {
+                nonPhData.forEach((row: { docType?: string; docNo?: string; outBase?: number }) => {
                     const docT = String(row.docType || "").toUpperCase();
                     const docN = String(row.docNo || "").toUpperCase().trim();
                     const isConsolidated = docT === "CONSOLIDATION DISPATCHES" || docN.startsWith("CLDTO");
@@ -109,7 +108,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     }
                 });
 
-                await Promise.all(data.map(async (row: { 
+                await Promise.all(nonPhData.map(async (row: { 
                     docType?: string; 
                     docNo: string; 
                     inBase?: number; 
@@ -159,7 +158,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                         }
                     }
 
-                    // 2. Patch Physical Inventory Counts (Variance calculation)
+                    // 2. Patch Physical Inventory Counts (Variance calculation) - kept for safety if any PH row remains
                     const isPH = docT === "PHYSICAL INVENTORY" || docN.startsWith("PH") || docN.includes("PH ");
                     if (isPH) {
                         try {
@@ -217,7 +216,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                         system_count?: number;
                     }[]).forEach((detail) => {
                         const dPid = String(typeof detail.product_id === 'object' ? detail.product_id?.product_id : detail.product_id || "");
-                        const dParentId = String(typeof detail.product_id === 'object' ? detail.product_id?.parent_id : "");
+                        const rawParent = typeof detail.product_id === 'object' ? detail.product_id?.parent_id : null;
+                        const dParentId = String(typeof rawParent === 'object' && rawParent !== null ? (rawParent as Record<string, unknown>).product_id || rawParent : rawParent || "");
 
                         // If it belongs to our family but wasn't in the response yet
                         if (!info.seenIds.has(dPid) && (dPid === String(parentId) || dParentId === String(parentId))) {
@@ -230,13 +230,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                             synth.variance = (Number(detail.physical_count) || 0) - (Number(detail.system_count) || 0);
                             synth.inBase = 0;
                             synth.outBase = 0;
-                            data.push(synth as Record<string, unknown>);
+                            nonPhData.push(synth as Record<string, unknown>);
                             info.seenIds.add(dPid);
                         }
                     });
                 });
 
-                return NextResponse.json(data, {
+                nonPhData.forEach((row: Record<string, unknown>) => {
+                    row.familyUnit = famUnit.name;
+                    row.familyUnitCount = famUnit.count;
+                });
+
+                return NextResponse.json(nonPhData, {
                     status: springRes.status,
                     headers: { "Content-Type": "application/json" }
                 });
