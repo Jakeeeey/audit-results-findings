@@ -268,7 +268,7 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
         }
     }
 
-    const netUnresolvedAmount = adjustedUnresolvedShort - adjustedUnresolvedOver;
+    const netUnresolvedAmount = Math.abs(adjustedUnresolvedShort - adjustedUnresolvedOver);
 
     const findingsNarrative = [
         `The reconciliation identified ${allShortRows.length} shortage row${allShortRows.length === 1 ? "" : "s"} with a total exposure of ₱ ${fmtMoney(totalShortAmount)}.`,
