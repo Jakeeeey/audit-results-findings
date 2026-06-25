@@ -1970,10 +1970,10 @@ export function MockLedgerModule(props: Props) {
                         </button>
                         <button
                             type="button"
-                            onClick={() => {
+                            onClick={async () => {
                                 const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
                                 const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
-                                const doc = generateManualTallySheetPdf({
+                                const doc = await generateManualTallySheetPdf({
                                     header,
                                     groupedRows,
                                     branchName: bName,
