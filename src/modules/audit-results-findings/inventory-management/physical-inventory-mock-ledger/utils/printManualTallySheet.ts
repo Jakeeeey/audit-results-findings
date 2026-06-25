@@ -44,12 +44,12 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
 
     for (const group of groupedRows) {
         const sortedChildren = [...group.rows].sort((a, b) => {
-            return b.unit_count - a.unit_count;
+            return a.unit_count - b.unit_count;
         });
 
         for (let idx = 0; idx < sortedChildren.length; idx++) {
             const child = sortedChildren[idx];
-            const codeCell = idx === 0 ? escapeHtml(child.product_code ?? "") : "";
+            const codeCell = escapeHtml(child.product_code ?? "");
             const descCell = escapeHtml(child.product_name || group.base_product_name);
             const unitCell = escapeHtml(child.unit_name ?? child.unit_shortcut ?? "PCS");
             const systemQtyVal = fmtNumber(child.system_count);
