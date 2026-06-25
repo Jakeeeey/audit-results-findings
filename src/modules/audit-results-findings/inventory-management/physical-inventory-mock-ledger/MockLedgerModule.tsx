@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
 
 import type {
     BranchRow,
@@ -50,6 +51,8 @@ import {
     updatePhysicalInventoryDetailsBulk,
     updateMockLedgerHeader,
     validateLoadProductsFilters,
+    generateAuditSheetPdf,
+    generateManualTallySheetPdf,
     type BulkPhysicalInventoryDetailUpdateItem,
 } from "./index";
 
@@ -83,7 +86,6 @@ import {
     MockLedgerHeader,
     MockLedgerTable,
 } from "./components";
-import { printAuditSheet } from "./utils/printAuditSheet";
 
 type Props = {
     initialHeaderId?: number | null;
@@ -213,6 +215,20 @@ export function MockLedgerModule(props: Props) {
 
     const [openCommitDialog, setOpenCommitDialog] = React.useState(false);
     const [isCommitting, setIsCommitting] = React.useState(false);
+    const [openPrintChoiceDialog, setOpenPrintChoiceDialog] = React.useState(false);
+
+    const [openPreviewDialog, setOpenPreviewDialog] = React.useState(false);
+    const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(null);
+    const [activeDocInstance, setActiveDocInstance] = React.useState<jsPDF | null>(null);
+    const [activeDocName, setActiveDocName] = React.useState("");
+
+    React.useEffect(() => {
+        return () => {
+            if (previewBlobUrl) {
+                URL.revokeObjectURL(previewBlobUrl);
+            }
+        };
+    }, [previewBlobUrl]);
 
     React.useEffect(() => {
         let ticking = false;
@@ -1447,19 +1463,7 @@ export function MockLedgerModule(props: Props) {
                         <Button
                             variant="outline"
                             className="cursor-pointer border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
-                            onClick={() => {
-                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
-                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
-                                const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
-
-                                printAuditSheet({
-                                    header,
-                                    groupedRows,
-                                    branchName: bName,
-                                    supplierName: sName,
-                                    priceTypeName: pName,
-                                });
-                            }}
+                            onClick={() => setOpenPrintChoiceDialog(true)}
                             disabled={!hasLoadedDetails}
                         >
                             <Printer className="mr-2 h-4 w-4" />
@@ -1923,6 +1927,141 @@ export function MockLedgerModule(props: Props) {
                             )}
                         </AlertDialogAction>
                     </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={openPrintChoiceDialog} onOpenChange={setOpenPrintChoiceDialog}>
+                <AlertDialogContent className="max-w-md rounded-2xl">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-lg font-bold tracking-tight">Print Document</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Select the document format you would like to print for this session.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="grid gap-3 py-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
+                                const doc = generateAuditSheetPdf({
+                                    header,
+                                    groupedRows,
+                                    branchName: bName,
+                                    supplierName: sName,
+                                    priceTypeName: pName,
+                                });
+                                if (previewBlobUrl) {
+                                    URL.revokeObjectURL(previewBlobUrl);
+                                }
+                                const blob = doc.output("blob");
+                                const blobUrl = URL.createObjectURL(blob);
+                                setPreviewBlobUrl(blobUrl);
+                                setActiveDocInstance(doc);
+                                setActiveDocName("Mock_Ledger_Audit_Sheet");
+                                setOpenPrintChoiceDialog(false);
+                                setOpenPreviewDialog(true);
+                            }}
+                            className="flex flex-col items-start gap-1 rounded-xl border p-4 text-left hover:bg-muted/50 hover:border-primary/50 transition cursor-pointer active:scale-[0.98]"
+                        >
+                            <span className="font-semibold text-sm">Mock Ledger Audit Sheet</span>
+                            <span className="text-xs text-muted-foreground">Prints standard audit sheet with system counts and empty columns for manual input of physical counts.</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                const doc = generateManualTallySheetPdf({
+                                    header,
+                                    groupedRows,
+                                    branchName: bName,
+                                    supplierName: sName,
+                                });
+                                if (previewBlobUrl) {
+                                    URL.revokeObjectURL(previewBlobUrl);
+                                }
+                                const blob = doc.output("blob");
+                                const blobUrl = URL.createObjectURL(blob);
+                                setPreviewBlobUrl(blobUrl);
+                                setActiveDocInstance(doc);
+                                setActiveDocName("Mock_Ledger_Manual_Tally_Sheet");
+                                setOpenPrintChoiceDialog(false);
+                                setOpenPreviewDialog(true);
+                            }}
+                            className="flex flex-col items-start gap-1 rounded-xl border p-4 text-left hover:bg-muted/50 hover:border-primary/50 transition cursor-pointer active:scale-[0.98]"
+                        >
+                            <span className="font-semibold text-sm">Mock Ledger Manual Tally Sheet</span>
+                            <span className="text-xs text-muted-foreground">Prints MEN2 MARKETING CORPORATION manual tally sheet for counting on-hand inventory.</span>
+                        </button>
+                    </div>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="cursor-pointer rounded-xl">Cancel</AlertDialogCancel>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={openPreviewDialog} onOpenChange={(open) => {
+                setOpenPreviewDialog(open);
+                if (!open && previewBlobUrl) {
+                    URL.revokeObjectURL(previewBlobUrl);
+                    setPreviewBlobUrl(null);
+                    setActiveDocInstance(null);
+                }
+            }}>
+                <AlertDialogContent style={{ maxWidth: "80rem" }} className="w-[90vw] h-[92vh] flex flex-col justify-between rounded-2xl p-6">
+                    <AlertDialogHeader className="flex flex-row items-center justify-between pb-2 border-b">
+                        <div>
+                            <AlertDialogTitle className="text-lg font-bold tracking-tight">
+                                {activeDocName.replace(/_/g, " ")}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs text-muted-foreground">
+                                Preview the generated document format below.
+                            </AlertDialogDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                className="cursor-pointer rounded-xl font-semibold border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 hover:scale-105 active:scale-95 transition-all text-xs"
+                                onClick={() => {
+                                    if (activeDocInstance) {
+                                        const filename = `${activeDocName}_${header?.ph_no || header?.id}.pdf`;
+                                        activeDocInstance.save(filename);
+                                    }
+                                }}
+                            >
+                                Download PDF
+                            </Button>
+                            <AlertDialogCancel
+                                className="cursor-pointer rounded-xl border border-input hover:bg-accent text-xs"
+                                onClick={() => {
+                                    setOpenPreviewDialog(false);
+                                    if (previewBlobUrl) {
+                                        URL.revokeObjectURL(previewBlobUrl);
+                                        setPreviewBlobUrl(null);
+                                        setActiveDocInstance(null);
+                                    }
+                                }}
+                            >
+                                Close
+                            </AlertDialogCancel>
+                        </div>
+                    </AlertDialogHeader>
+
+                    <div className="flex-1 min-h-0 py-4 bg-muted/10 flex items-center justify-center rounded-xl overflow-hidden mt-3">
+                        {previewBlobUrl ? (
+                            <iframe
+                                src={`${previewBlobUrl}#toolbar=0`}
+                                className="w-full h-full border-0 rounded-xl shadow-inner"
+                            />
+                        ) : (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Generating preview...
+                            </div>
+                        )}
+                    </div>
                 </AlertDialogContent>
             </AlertDialog>
 
