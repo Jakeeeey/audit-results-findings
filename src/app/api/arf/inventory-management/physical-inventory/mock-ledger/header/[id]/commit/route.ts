@@ -5,8 +5,8 @@ const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const DIRECTUS_TOKEN =
     process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || "";
 
-const TABLE_PH = "physical_inventory";
-const TABLE_DETAILS = "physical_inventory_details";
+const TABLE_PH = "mock_ledger";
+const TABLE_DETAILS = "mock_ledger_details";
 
 type RouteContext = {
     params: Promise<{
@@ -17,6 +17,7 @@ type RouteContext = {
 type PhysicalInventoryHeaderRow = {
     id: number;
     ph_no: string | null;
+    ml_no?: string | null;
     cutOff_date: string | null;
     starting_date: string | null;
     price_type: number | null;
@@ -136,7 +137,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
         }
 
         const header = await directusGetSingle<PhysicalInventoryHeaderRow>(
-            `/items/${TABLE_PH}/${headerId}?fields=id,ph_no,cutOff_date,starting_date,price_type,stock_type,branch_id,remarks,isComitted,isCancelled,committed_at,cancelled_at,total_amount,supplier_id,category_id,encoder_id`,
+            `/items/${TABLE_PH}/${headerId}?fields=id,ml_no,cutOff_date,starting_date,price_type,stock_type,branch_id,remarks,isComitted,isCancelled,committed_at,cancelled_at,total_amount,supplier_id,category_id,encoder_id`,
         );
 
         if (!header) {
@@ -160,7 +161,8 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             );
         }
 
-        if (!(header.ph_no ?? "").trim()) {
+        const ml_no = header.ml_no;
+        if (!(ml_no ?? "").trim()) {
             return NextResponse.json(
                 { error: "PH No is required before commit." },
                 { status: 400 },
@@ -183,8 +185,8 @@ export async function POST(_req: NextRequest, context: RouteContext) {
 
         const details = await directusGetMany<PhysicalInventoryDetailRow>(
             `/items/${TABLE_DETAILS}?filter=${encodeURIComponent(
-                JSON.stringify({ ph_id: { _eq: headerId } }),
-            )}&fields=id,ph_id,product_id,unit_price,system_count,physical_count,variance,difference_cost,amount,offset_match&sort=id&limit=-1`,
+                JSON.stringify({ ml_id: { _eq: headerId } }),
+            )}&fields=id,ml_id,product_id,unit_price,system_count,physical_count,variance,difference_cost,amount,offset_match&sort=id&limit=-1`,
         );
 
         if (!details.length) {
@@ -212,7 +214,9 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             },
         );
 
-        return NextResponse.json({ data: updated });
+        const mappedUpdated = { ...updated, ph_no: updated.ml_no ?? updated.ph_no };
+        delete mappedUpdated.ml_no;
+        return NextResponse.json({ data: mappedUpdated });
     } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to commit PI.";
         return NextResponse.json({ error: message }, { status: 500 });

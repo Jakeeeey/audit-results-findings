@@ -1,9 +1,9 @@
-//src/modules/supply-chain-management/physical-inventory-management/PhysicalInventoryManagementModule.tsx
+//src/modules/supply-chain-management/physical-inventory-manual-management/MockLedgerModule.tsx
 "use client";
 
 import * as React from "react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import jsPDF from "jspdf";
 
 import type {
     BranchRow,
@@ -13,9 +13,9 @@ import type {
     GroupedPhysicalInventoryRow,
     PhysicalInventoryDetailRow,
     PhysicalInventoryDetailUpsertPayload,
-    PhysicalInventoryFiltersType,
-    PhysicalInventoryHeaderRow,
-    PhysicalInventoryHeaderUpsertPayload,
+    MockLedgerFiltersType,
+    MockLedgerHeaderRow,
+    MockLedgerHeaderUpsertPayload,
     PhysicalInventoryStatus,
     PriceTypeRow,
     ProductLookupBundle,
@@ -32,15 +32,15 @@ import {
     computeDifferenceCost,
     computeVariance,
     convertBaseQtyToDisplayQty,
+    createMockLedgerHeader,
     createPhysicalInventoryDetailsBulk,
-    createPhysicalInventoryHeader,
     derivePhysicalInventoryStatus,
+    commitMockLedger,
     fetchBranches,
     fetchLatestCommittedCutoffDateByBranch,
     fetchNextPhysicalInventoryNumber,
     fetchPhysicalInventoryById,
     fetchPhysicalInventoryDetails,
-    fetchPhysicalInventoryRfidCountByHeader,
     fetchPriceTypes,
     fetchProductLookupBundle,
     fetchRunningInventoryFiltered,
@@ -49,8 +49,10 @@ import {
     resolveRunningInventoryFilterParams,
     sumHeaderTotalAmount,
     updatePhysicalInventoryDetailsBulk,
-    updatePhysicalInventoryHeader,
+    updateMockLedgerHeader,
     validateLoadProductsFilters,
+    generateAuditSheetPdf,
+    generateManualTallySheetPdf,
     type BulkPhysicalInventoryDetailUpdateItem,
 } from "./index";
 
@@ -66,46 +68,36 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-    ArrowRightCircle,
     Ban,
     Boxes,
+    CheckCircle2,
     ClipboardList,
     Loader2,
     Plus,
     Printer,
     RefreshCcw,
-    ScanLine,
     Search,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 import {
-    PhysicalInventoryFilters as PhysicalInventoryFiltersCard,
-    PhysicalInventoryGlobalRFIDScannerDialog,
-    PhysicalInventoryHeader,
-    PhysicalInventoryRFIDDialog,
-    PhysicalInventoryTable,
-    PhysicalInventoryAddProductDialog,
-    printAuditSheet,
-} from "./index";
+    MockLedgerAddProductDialog,
+    MockLedgerFilters as MockLedgerFiltersCard,
+    MockLedgerHeader,
+    MockLedgerTable,
+} from "./components";
 
 type Props = {
     initialHeaderId?: number | null;
-    onRecordChange?: (header: PhysicalInventoryHeaderRow) => void;
+    onRecordChange?: (header: MockLedgerHeaderRow) => void;
     currentUser?: { id: number; name: string } | null;
 };
 
 type RebuildInput = {
     nextDetails?: PhysicalInventoryDetailRow[];
-    nextHeader?: PhysicalInventoryHeaderRow | null;
-    nextFilters?: PhysicalInventoryFiltersType;
+    nextHeader?: MockLedgerHeaderRow | null;
+    nextFilters?: MockLedgerFiltersType;
     nextRunningInventoryRows?: RunningInventoryRow[];
-    nextRfidCountByDetailId?: Record<number, number>;
-};
-
-type LocalRfidSavedPayload = {
-    updatedDetail: PhysicalInventoryDetailRow;
-    rfidCount: number;
 };
 
 function nowInputValue(): string {
@@ -167,8 +159,8 @@ function buildRunningInventoryCacheKey(input: {
 }): string {
     return [
         input.branchName.trim().toLowerCase(),
-        (input.supplierShortcut ?? "__all_suppliers__").trim().toLowerCase(),
-        (input.productCategory ?? "__all_categories__").trim().toLowerCase(),
+        (input.supplierShortcut ?? "__any__").trim().toLowerCase(),
+        (input.productCategory ?? "__all__").trim().toLowerCase(),
         (input.cutOffDate ?? "__no_cutoff__").trim().toLowerCase(),
     ].join("::");
 }
@@ -205,18 +197,12 @@ function groupedRowHasVariance(row: GroupedPhysicalInventoryRow): boolean {
     return row.rows.some((child) => child.variance !== 0 || child.variance_base !== 0);
 }
 
-function groupedRowHasRfid(row: GroupedPhysicalInventoryRow): boolean {
-    return row.rows.some((child) => child.requires_rfid);
-}
-
 function groupedRowHasUncounted(row: GroupedPhysicalInventoryRow): boolean {
     return row.rows.some((child) => child.physical_count === 0);
 }
 
-export function PhysicalInventoryManagementModule(props: Props) {
+export function MockLedgerModule(props: Props) {
     const { initialHeaderId = null, onRecordChange, currentUser } = props;
-    const router = useRouter();
-
     const [isBootLoading, setIsBootLoading] = React.useState(true);
     const [isLoadingProducts, setIsLoadingProducts] = React.useState(false);
     const [isCancelling, setIsCancelling] = React.useState(false);
@@ -224,9 +210,25 @@ export function PhysicalInventoryManagementModule(props: Props) {
     const [isHydratingRecord, setIsHydratingRecord] = React.useState(false);
     const [isRebuildingGroups, setIsRebuildingGroups] = React.useState(false);
     const [isSavingDetailBatch, setIsSavingDetailBatch] = React.useState(false);
-    const [isConfirmLoadDialogOpen, setIsConfirmLoadDialogOpen] = React.useState(false);
     const [openAddProductDialog, setOpenAddProductDialog] = React.useState(false);
     const [isScrolled, setIsScrolled] = React.useState(false);
+
+    const [openCommitDialog, setOpenCommitDialog] = React.useState(false);
+    const [isCommitting, setIsCommitting] = React.useState(false);
+    const [openPrintChoiceDialog, setOpenPrintChoiceDialog] = React.useState(false);
+
+    const [openPreviewDialog, setOpenPreviewDialog] = React.useState(false);
+    const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(null);
+    const [activeDocInstance, setActiveDocInstance] = React.useState<jsPDF | null>(null);
+    const [activeDocName, setActiveDocName] = React.useState("");
+
+    React.useEffect(() => {
+        return () => {
+            if (previewBlobUrl) {
+                URL.revokeObjectURL(previewBlobUrl);
+            }
+        };
+    }, [previewBlobUrl]);
 
     React.useEffect(() => {
         let ticking = false;
@@ -234,12 +236,11 @@ export function PhysicalInventoryManagementModule(props: Props) {
         const handleScroll = () => {
             if (!ticking) {
                 window.requestAnimationFrame(() => {
-                    const sentinel = document.getElementById("pi-product-finder-sentinel");
+                    const sentinel = document.getElementById("pi-manual-product-finder-sentinel");
                     if (sentinel) {
                         const rect = sentinel.getBoundingClientRect();
                         const shouldBeScrolled = rect.bottom < 0;
 
-                        // Functional update with check to avoid unnecessary re-renders of the large module
                         setIsScrolled(prev => {
                             if (prev !== shouldBeScrolled) return shouldBeScrolled;
                             return prev;
@@ -251,7 +252,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
             }
         };
 
-        // 'passive: true' improves scroll performance by telling the browser we won't call preventDefault()
         document.addEventListener("scroll", handleScroll, { capture: true, passive: true });
         return () => document.removeEventListener("scroll", handleScroll, true);
     }, []);
@@ -268,51 +268,12 @@ export function PhysicalInventoryManagementModule(props: Props) {
     const dirtyDetailIdsRef = React.useRef<Set<number>>(new Set());
 
     const [runningInventoryRows, setRunningInventoryRows] = React.useState<RunningInventoryRow[]>([]);
-    const [rfidCountByDetailId, setRfidCountByDetailId] = React.useState<Record<number, number>>(
-        {},
-    );
 
-    const [header, setHeader] = React.useState<PhysicalInventoryHeaderRow | null>(null);
-
-    const setHydratedHeader = React.useCallback(
-        (
-            next:
-                | PhysicalInventoryHeaderRow
-                | null
-                | ((prev: PhysicalInventoryHeaderRow | null) => PhysicalInventoryHeaderRow | null),
-        ) => {
-            setHeader((prev) => {
-                const result = typeof next === "function" ? next(prev) : next;
-                if (!result || !currentUser) return result;
-
-                const numericId =
-                    typeof result.encoder_id === "object"
-                        ? result.encoder_id?.user_id
-                        : result.encoder_id;
-
-                if (numericId === currentUser.id) {
-                    return {
-                        ...result,
-                        encoder_id: {
-                            user_id: currentUser.id,
-                            user_fname: currentUser.name,
-                            user_lname: "",
-                        },
-                    };
-                }
-                return result;
-            });
-        },
-        [currentUser],
-    );
-
+    const [header, setHeader] = React.useState<MockLedgerHeaderRow | null>(null);
     const [detailRows, setDetailRows] = React.useState<PhysicalInventoryDetailRow[]>([]);
     const [groupedRows, setGroupedRows] = React.useState<GroupedPhysicalInventoryRow[]>([]);
-    const [rfidDialogRow, setRfidDialogRow] =
-        React.useState<GroupedPhysicalInventoryChildRow | null>(null);
-    const [isGlobalScannerOpen, setIsGlobalScannerOpen] = React.useState(false);
 
-    const [filters, setFilters] = React.useState<PhysicalInventoryFiltersType>({
+    const [filters, setFilters] = React.useState<MockLedgerFiltersType>({
         branch_id: null,
         supplier_id: null,
         category_id: null,
@@ -321,13 +282,13 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
     const [productSearch, setProductSearch] = React.useState("");
     const [activeQuickFilter, setActiveQuickFilter] = React.useState<
-        "ALL" | "VARIANCE" | "RFID" | "UNCOUNTED"
+        "ALL" | "VARIANCE" | "UNCOUNTED"
     >("ALL");
     const [activeQuickCategory, setActiveQuickCategory] = React.useState<string>("ALL");
 
     React.useEffect(() => {
         if (filters.branch_id && currentUser) {
-            setHydratedHeader((prev) => {
+            setHeader((prev) => {
                 if (!prev) return prev;
                 if (prev.id !== 0) return prev;
                 if (prev.date_encoded && prev.encoder_id) return prev;
@@ -342,7 +303,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 };
             });
         }
-    }, [filters.branch_id, currentUser, setHydratedHeader]);
+    }, [filters.branch_id, currentUser]);
 
     const hasLoadedDetails = detailRows.length > 0;
 
@@ -378,16 +339,28 @@ export function PhysicalInventoryManagementModule(props: Props) {
         );
     }, [groupedRows]);
 
+    const { shortTotal, overTotal } = React.useMemo(() => {
+        let st = 0;
+        let ot = 0;
+        for (const group of groupedRows) {
+            for (const row of group.rows) {
+                const diff = row.difference_cost ?? 0;
+                if (diff < 0) {
+                    st += Math.abs(diff);
+                } else if (diff > 0) {
+                    ot += diff;
+                }
+            }
+        }
+        return { shortTotal: st, overTotal: ot };
+    }, [groupedRows]);
+
     const operationalSummary = React.useMemo(() => {
-        let rfidRowsCount = 0;
         let rowsWithVariance = 0;
         let uncountedRows = 0;
 
         for (const group of groupedRows) {
             for (const row of group.rows) {
-                if (row.requires_rfid) {
-                    rfidRowsCount += 1;
-                }
                 if (row.variance !== 0 || row.variance_base !== 0) {
                     rowsWithVariance += 1;
                 }
@@ -401,7 +374,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
             skuGroups: groupedRows.length,
             detailRows: detailRows.length,
             rowsWithVariance,
-            rfidRowsCount,
             uncountedRows,
         };
     }, [detailRows.length, groupedRows]);
@@ -410,7 +382,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
         return {
             ALL: groupedRows.length,
             VARIANCE: groupedRows.filter(groupedRowHasVariance).length,
-            RFID: groupedRows.filter(groupedRowHasRfid).length,
             UNCOUNTED: groupedRows.filter(groupedRowHasUncounted).length,
         };
     }, [groupedRows]);
@@ -451,17 +422,11 @@ export function PhysicalInventoryManagementModule(props: Props) {
             const matchesOperationalFilter =
                 activeQuickFilter === "ALL" ||
                 (activeQuickFilter === "VARIANCE" && groupedRowHasVariance(group)) ||
-                (activeQuickFilter === "RFID" && groupedRowHasRfid(group)) ||
                 (activeQuickFilter === "UNCOUNTED" && groupedRowHasUncounted(group));
 
             return matchesCategory && matchesSearch && matchesOperationalFilter;
         });
     }, [activeQuickCategory, activeQuickFilter, groupedRows, productSearch]);
-
-    const allGroupedChildRows = React.useMemo(
-        () => groupedRows.flatMap((group) => group.rows),
-        [groupedRows],
-    );
 
     const eligibleVariants = React.useMemo(() => {
         const sId = Number(filters.supplier_id);
@@ -486,8 +451,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
             const activeLookup = lookupBundle;
             const activeRunningInventoryRows =
                 input?.nextRunningInventoryRows ?? runningInventoryRows;
-            const activeRfidCountByDetailId =
-                input?.nextRfidCountByDetailId ?? rfidCountByDetailId;
 
             if (!activeLookup || !activeFilters.branch_id) {
                 setGroupedRows([]);
@@ -519,7 +482,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                     details: activeDetails,
                     runningInventoryRows: activeRunningInventoryRows,
                     ph_id: activeHeader?.id ?? null,
-                    rfidCountByDetailId: activeRfidCountByDetailId,
+                    ignoreRfid: true,
                 });
 
                 setGroupedRows(nextGrouped);
@@ -527,42 +490,12 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 setIsRebuildingGroups(false);
             }
         },
-        [detailRows, filters, header, lookupBundle, rfidCountByDetailId, runningInventoryRows],
-    );
-
-    const reloadDetails = React.useCallback(async (id: number) => {
-        const [nextDetails] = await Promise.all([
-            fetchPhysicalInventoryDetails(id),
-            updatePhysicalInventoryHeader(id, { total_amount: 0 }),
-        ]);
-
-        const finalHeader = await updatePhysicalInventoryHeader(id, {
-            total_amount: sumHeaderTotalAmount(nextDetails)
-        });
-
-        setDetailRows(nextDetails);
-        setHydratedHeader(finalHeader);
-        onRecordChange?.(finalHeader);
-
-        rebuildGroupedRows({
-            nextDetails,
-            nextHeader: finalHeader,
-            nextFilters: filters,
-        });
-    }, [filters, onRecordChange, rebuildGroupedRows, setHydratedHeader]);
-
-    const refreshRfidCountMap = React.useCallback(
-        async (phId: number): Promise<Record<number, number>> => {
-            const nextMap = await fetchPhysicalInventoryRfidCountByHeader(phId);
-            setRfidCountByDetailId(nextMap);
-            return nextMap;
-        },
-        [],
+        [detailRows, filters, header, lookupBundle, runningInventoryRows],
     );
 
     const refreshRunningInventoryReadModel = React.useCallback(
         async (
-            nextFilters: PhysicalInventoryFiltersType & { cutOffDate?: string | null },
+            nextFilters: MockLedgerFiltersType & { cutOffDate?: string | null },
             nextLookup?: ProductLookupBundle | null,
         ): Promise<RunningInventoryRow[]> => {
             const activeLookup = nextLookup ?? lookupBundle;
@@ -605,6 +538,27 @@ export function PhysicalInventoryManagementModule(props: Props) {
         [branches, lookupBundle, suppliers],
     );
 
+    const reloadDetails = React.useCallback(async (id: number) => {
+        const [nextDetails] = await Promise.all([
+            fetchPhysicalInventoryDetails(id),
+            updateMockLedgerHeader(id, { total_amount: 0 }),
+        ]);
+
+        const finalHeader = await updateMockLedgerHeader(id, {
+            total_amount: sumHeaderTotalAmount(nextDetails)
+        });
+
+        setDetailRows(nextDetails);
+        setHeader(finalHeader);
+        onRecordChange?.(finalHeader);
+
+        rebuildGroupedRows({
+            nextDetails,
+            nextHeader: finalHeader,
+            nextFilters: filters,
+        });
+    }, [filters, onRecordChange, rebuildGroupedRows]);
+
     const flushDirtyDetails = React.useCallback(async () => {
         if (!header?.id) return;
         if (!dirtyDetailIdsRef.current.size) return;
@@ -639,11 +593,11 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 dirtyDetailIdsRef.current.delete(id);
             }
 
-            const nextHeader = await updatePhysicalInventoryHeader(header.id, {
+            const nextHeader = await updateMockLedgerHeader(header.id, {
                 total_amount: sumHeaderTotalAmount(nextDetails),
             });
 
-            setHydratedHeader(nextHeader);
+            setHeader(nextHeader);
             onRecordChange?.(nextHeader);
 
             rebuildGroupedRows({
@@ -658,56 +612,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
         } finally {
             setIsSavingDetailBatch(false);
         }
-    }, [detailRows, filters, header, onRecordChange, rebuildGroupedRows, setHydratedHeader]);
-
-    const applyLocalRfidSavedPayload = React.useCallback(
-        (payload: LocalRfidSavedPayload) => {
-            const nextDetails = detailRows.map((detail) =>
-                detail.id === payload.updatedDetail.id ? payload.updatedDetail : detail,
-            );
-
-            const nextRfidCountByDetailId = {
-                ...rfidCountByDetailId,
-                [payload.updatedDetail.id]: payload.rfidCount,
-            };
-
-            setDetailRows(nextDetails);
-            setRfidCountByDetailId(nextRfidCountByDetailId);
-
-            if (header) {
-                const nextHeader: PhysicalInventoryHeaderRow = {
-                    ...header,
-                    total_amount: sumHeaderTotalAmount(nextDetails),
-                };
-
-                setHydratedHeader(nextHeader);
-                onRecordChange?.(nextHeader);
-
-                if (header.id > 0) {
-                    void updatePhysicalInventoryHeader(header.id, {
-                        total_amount: nextHeader.total_amount,
-                    }).catch(() => {
-                        // keep UI responsive; explicit refresh still re-syncs
-                    });
-                }
-
-                rebuildGroupedRows({
-                    nextDetails,
-                    nextHeader,
-                    nextFilters: filters,
-                    nextRfidCountByDetailId,
-                });
-                return;
-            }
-
-            rebuildGroupedRows({
-                nextDetails,
-                nextFilters: filters,
-                nextRfidCountByDetailId,
-            });
-        },
-        [detailRows, filters, header, onRecordChange, rebuildGroupedRows, rfidCountByDetailId, setHydratedHeader],
-    );
+    }, [detailRows, filters, header, onRecordChange, rebuildGroupedRows]);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -719,7 +624,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 setDetailRows([]);
                 setCategories([]);
                 setRunningInventoryRows([]);
-                setRfidCountByDetailId({});
                 dirtyDetailIdsRef.current.clear();
 
                 const [nextBranches, nextSuppliers, nextPriceTypes, nextLookup] =
@@ -747,14 +651,14 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
                     if (cancelled) return;
 
-                    const nextFilters: PhysicalInventoryFiltersType = {
+                    const nextFilters: MockLedgerFiltersType = {
                         branch_id: existingHeader.branch_id ? Number(existingHeader.branch_id) : null,
                         supplier_id: existingHeader.supplier_id ? Number(existingHeader.supplier_id) : null,
                         category_id: existingHeader.category_id ? Number(existingHeader.category_id) : null,
                         price_type_id: existingHeader.price_type ? Number(existingHeader.price_type) : null,
                     };
 
-                    setHydratedHeader(existingHeader);
+                    setHeader(existingHeader);
                     setDetailRows(existingDetails);
                     setFilters(nextFilters);
 
@@ -803,13 +707,9 @@ export function PhysicalInventoryManagementModule(props: Props) {
                         return rows;
                     })();
 
-                    const nextRfidCountByDetailId =
-                        await fetchPhysicalInventoryRfidCountByHeader(initialHeaderId);
-
                     if (cancelled) return;
 
                     setRunningInventoryRows(nextRunningRows);
-                    setRfidCountByDetailId(nextRfidCountByDetailId);
 
                     if (nextFilters.branch_id && existingDetails.length > 0) {
                         const variants = buildVariantsFromSavedDetails({
@@ -824,7 +724,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                             details: existingDetails,
                             runningInventoryRows: nextRunningRows,
                             ph_id: existingHeader.id ?? null,
-                            rfidCountByDetailId: nextRfidCountByDetailId,
+                            ignoreRfid: true,
                         });
 
                         setGroupedRows(nextGrouped);
@@ -838,7 +738,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
                 const nextPhNo = await fetchNextPhysicalInventoryNumber();
 
-                const draftHeader: PhysicalInventoryHeaderRow = {
+                const draftHeader: MockLedgerHeaderRow = {
                     id: 0,
                     ph_no: nextPhNo,
                     date_encoded: null,
@@ -860,12 +760,11 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
                 if (cancelled) return;
 
-                setHydratedHeader(draftHeader);
+                setHeader(draftHeader);
                 setDetailRows([]);
                 setGroupedRows([]);
                 setCategories([]);
                 setRunningInventoryRows([]);
-                setRfidCountByDetailId({});
                 setFilters({
                     branch_id: null,
                     supplier_id: null,
@@ -888,7 +787,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
         return () => {
             cancelled = true;
         };
-    }, [initialHeaderId, setHydratedHeader]);
+    }, [initialHeaderId]);
 
     React.useEffect(() => {
         async function syncStartingDate() {
@@ -897,7 +796,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
             try {
                 const latestCutoff = await fetchLatestCommittedCutoffDateByBranch(filters.branch_id);
 
-                setHydratedHeader((prev) => {
+                setHeader((prev) => {
                     if (!prev) return prev;
 
                     if (prev.branch_id === filters.branch_id && prev.starting_date === latestCutoff) {
@@ -918,7 +817,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
         }
 
         void syncStartingDate();
-    }, [filters.branch_id, hasLoadedDetails, header?.id, setHydratedHeader]);
+    }, [filters.branch_id, hasLoadedDetails, header?.id]);
 
     React.useEffect(() => {
         if (!lookupBundle || !filters.supplier_id) {
@@ -989,7 +888,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
         filters.price_type_id,
         isBootLoading,
         lookupBundle,
-        rfidCountByDetailId,
         runningInventoryRows,
         hasLoadedDetails,
     ]);
@@ -1006,13 +904,13 @@ export function PhysicalInventoryManagementModule(props: Props) {
         }
     }, [activeQuickCategory, quickCategoryOptions]);
 
-    const ensureHeaderSaved = React.useCallback(async (): Promise<PhysicalInventoryHeaderRow> => {
+    const ensureHeaderSaved = React.useCallback(async (): Promise<MockLedgerHeaderRow> => {
         if (!header) {
             throw new Error("Header state is not initialized.");
         }
 
         if (!(header.ph_no ?? "").trim()) {
-            throw new Error("PH No is required.");
+            throw new Error("ML No is required.");
         }
 
         if (!header.stock_type) {
@@ -1039,7 +937,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
             throw new Error("Starting date is required.");
         }
 
-        const payload: PhysicalInventoryHeaderUpsertPayload = {
+        const payload: MockLedgerHeaderUpsertPayload = {
             ph_no: (header.ph_no ?? "").trim(),
             cutOff_date: header.cutOff_date,
             starting_date: header.starting_date,
@@ -1055,31 +953,23 @@ export function PhysicalInventoryManagementModule(props: Props) {
         };
 
         if (header.id > 0) {
-            const updated = await updatePhysicalInventoryHeader(header.id, {
-                ...payload,
-                encoder_id: typeof header.encoder_id === "object" ? header.encoder_id?.user_id : header.encoder_id || currentUser?.id,
-            });
-            setHydratedHeader(updated);
+            const updated = await updateMockLedgerHeader(header.id, payload);
+            setHeader(updated);
             onRecordChange?.(updated);
             return updated;
         }
 
-        const created = await createPhysicalInventoryHeader({
-            ...payload,
-            encoder_id: currentUser?.id,
-        });
-        setHydratedHeader(created);
+        const created = await createMockLedgerHeader(payload);
+        setHeader(created);
         onRecordChange?.(created);
         return created;
     }, [
-        currentUser?.id,
         filters.branch_id,
         filters.category_id,
         filters.price_type_id,
         filters.supplier_id,
         header,
         onRecordChange,
-        setHydratedHeader,
         totalAmount,
     ]);
 
@@ -1113,7 +1003,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
             const runningInventoryFilterParams = resolveRunningInventoryFilterParams({
                 branchId: filters.branch_id as number,
-                supplierId: null,
+                supplierId: null, // Always get branch-wide stock to ensure accurate system counts
                 categoryId: filters.category_id as number,
                 branches,
                 suppliers,
@@ -1148,6 +1038,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 return;
             }
 
+            // Aggregate running inventory by product ID across all suppliers
             const runningInventoryByProductId = new Map<number, number>();
             for (const row of nextRunningInventoryRows) {
                 const current = runningInventoryByProductId.get(row.product_id) ?? 0;
@@ -1206,7 +1097,25 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 });
 
             await createPhysicalInventoryDetailsBulk(detailPayloads);
-            await reloadDetails(savedHeader.id);
+
+            const persistedDetails = await fetchPhysicalInventoryDetails(savedHeader.id);
+            setDetailRows(persistedDetails);
+            dirtyDetailIdsRef.current.clear();
+
+            const nextHeader = await updateMockLedgerHeader(savedHeader.id, {
+                total_amount: sumHeaderTotalAmount(persistedDetails),
+            });
+
+            setHeader(nextHeader);
+            onRecordChange?.(nextHeader);
+
+            rebuildGroupedRows({
+                nextDetails: persistedDetails,
+                nextHeader,
+                nextFilters: filters,
+                nextRunningInventoryRows,
+            });
+
             toast.success("Products loaded successfully.");
         } catch (error) {
             const message = error instanceof Error ? error.message : "Failed to load products.";
@@ -1221,7 +1130,8 @@ export function PhysicalInventoryManagementModule(props: Props) {
         filters,
         hasLoadedDetails,
         lookupBundle,
-        reloadDetails,
+        onRecordChange,
+        rebuildGroupedRows,
         suppliers,
     ]);
 
@@ -1387,11 +1297,10 @@ export function PhysicalInventoryManagementModule(props: Props) {
         try {
             if (!header?.id) return;
 
-            const [nextDetails, nextRfidCountByDetailId, nextRunningInventoryRows] =
+            const [nextDetails, nextRunningInventoryRows] =
                 await Promise.all([
                     fetchPhysicalInventoryDetails(header.id),
-                    refreshRfidCountMap(header.id),
-                    refreshRunningInventoryReadModel(filters),
+                    refreshRunningInventoryReadModel({ ...filters, cutOffDate: header.cutOff_date }),
                 ]);
 
             setDetailRows(nextDetails);
@@ -1402,7 +1311,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 nextHeader: header,
                 nextFilters: filters,
                 nextRunningInventoryRows,
-                nextRfidCountByDetailId,
             });
 
             toast.success("Detail view refreshed.");
@@ -1411,21 +1319,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 error instanceof Error ? error.message : "Failed to refresh details.";
             toast.error(message);
         }
-    }, [filters, header, rebuildGroupedRows, refreshRfidCountMap, refreshRunningInventoryReadModel]);
-
-    const handleRfidSaved = React.useCallback(
-        async (payload: LocalRfidSavedPayload) => {
-            applyLocalRfidSavedPayload(payload);
-        },
-        [applyLocalRfidSavedPayload],
-    );
-
-    const handleAfterAnyScan = React.useCallback(
-        async (payload: LocalRfidSavedPayload) => {
-            applyLocalRfidSavedPayload(payload);
-        },
-        [applyLocalRfidSavedPayload],
-    );
+    }, [filters, header, rebuildGroupedRows, refreshRunningInventoryReadModel]);
 
     const handleCancel = React.useCallback(async () => {
         if (!header?.id) {
@@ -1443,7 +1337,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
 
             const updatedHeader = await cancelPhysicalInventory(header.id);
 
-            setHydratedHeader(updatedHeader);
+            setHeader(updatedHeader);
             onRecordChange?.(updatedHeader);
 
             rebuildGroupedRows({
@@ -1453,14 +1347,49 @@ export function PhysicalInventoryManagementModule(props: Props) {
             });
 
             setOpenCancelDialog(false);
-            toast.success("Physical Inventory cancelled successfully.");
+            toast.success("Mock Ledger cancelled successfully.");
         } catch (error) {
             const message = error instanceof Error ? error.message : "Failed to cancel PI.";
             toast.error(message);
         } finally {
             setIsCancelling(false);
         }
-    }, [canEdit, detailRows, filters, header?.id, onRecordChange, rebuildGroupedRows, setHydratedHeader]);
+    }, [canEdit, detailRows, filters, header?.id, onRecordChange, rebuildGroupedRows]);
+
+    const handleCommit = React.useCallback(async () => {
+        if (!header?.id) {
+            toast.error("This PI must exist before commit.");
+            return;
+        }
+
+        if (!canEdit) {
+            toast.error("This PI can no longer be edited.");
+            return;
+        }
+
+        try {
+            setIsCommitting(true);
+
+            const updatedHeader = await commitMockLedger(header.id);
+
+            setHeader(updatedHeader);
+            onRecordChange?.(updatedHeader);
+
+            rebuildGroupedRows({
+                nextDetails: detailRows,
+                nextHeader: updatedHeader,
+                nextFilters: filters,
+            });
+
+            setOpenCommitDialog(false);
+            toast.success("Mock Ledger committed successfully.");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to commit Mock Ledger.";
+            toast.error(message);
+        } finally {
+            setIsCommitting(false);
+        }
+    }, [canEdit, detailRows, filters, header?.id, onRecordChange, rebuildGroupedRows]);
 
     const canCancelAction =
         Boolean(header?.id) &&
@@ -1476,7 +1405,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
             <div className="flex min-h-[280px] items-center justify-center rounded-2xl border bg-background">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading Physical Inventory module...
+                    Loading Mock Ledger module...
                 </div>
             </div>
         );
@@ -1493,7 +1422,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                             </div>
                             <div>
                                 <h1 className="text-lg font-semibold tracking-tight">
-                                    Physical Inventory Management
+                                    Mock Ledger
                                 </h1>
                                 <p className="text-sm text-muted-foreground">
                                     Review the header, scope products, count inventory, and save
@@ -1504,29 +1433,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        <Button
-                            variant="outline"
-                            className="cursor-pointer border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40"
-                            onClick={() =>
-                                router.push(
-                                    `/arf/inventory-management/physical-inventory/offsetting?id=${header.id}`,
-                                )
-                            }
-                            disabled={!header.id}
-                        >
-                            <ArrowRightCircle className="mr-2 h-4 w-4" />
-                            Go to Offsetting
-                        </Button>
-
-                        <Button
-                            variant="outline"
-                            className="cursor-pointer"
-                            onClick={() => setIsGlobalScannerOpen(true)}
-                            disabled={!canEdit || !header.id || !hasLoadedDetails}
-                        >
-                            <ScanLine className="mr-2 h-4 w-4" />
-                            Global RFID Scanner
-                        </Button>
 
                         <Button
                             variant="outline"
@@ -1557,52 +1463,49 @@ export function PhysicalInventoryManagementModule(props: Props) {
                         <Button
                             variant="outline"
                             className="cursor-pointer border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
-                            onClick={() => {
-                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
-                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
-                                const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
-
-                                printAuditSheet({
-                                    header,
-                                    groupedRows,
-                                    branchName: bName,
-                                    supplierName: sName,
-                                    priceTypeName: pName,
-                                });
-                            }}
+                            onClick={() => setOpenPrintChoiceDialog(true)}
                             disabled={!hasLoadedDetails}
                         >
                             <Printer className="mr-2 h-4 w-4" />
-                            Print Audit Sheet
+                            Print
+                        </Button>
+
+                        <Button
+                            className="cursor-pointer"
+                            onClick={() => setOpenCommitDialog(true)}
+                            disabled={!canCancelAction || !hasLoadedDetails}
+                        >
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Commit ML
                         </Button>
                     </div>
                 </div>
             </div>
 
-            <PhysicalInventoryHeader
+            <MockLedgerHeader
                 header={header}
                 status={status}
                 canEdit={canEdit}
                 hasLoadedDetails={hasLoadedDetails}
                 totalAmount={totalAmount}
                 onChangePhNo={(value) =>
-                    setHydratedHeader((prev) => (prev ? { ...prev, ph_no: value } : prev))
+                    setHeader((prev) => (prev ? { ...prev, ph_no: value } : prev))
                 }
                 onChangeStockType={(value) =>
-                    setHydratedHeader((prev) => (prev ? { ...prev, stock_type: value } : prev))
+                    setHeader((prev) => (prev ? { ...prev, stock_type: value } : prev))
                 }
                 onChangeRemarks={(value) =>
-                    setHydratedHeader((prev) => (prev ? { ...prev, remarks: value } : prev))
+                    setHeader((prev) => (prev ? { ...prev, remarks: value } : prev))
                 }
                 onChangeCutoffDate={(value) =>
-                    setHydratedHeader((prev) => (prev ? { ...prev, cutOff_date: value } : prev))
+                    setHeader((prev) => (prev ? { ...prev, cutOff_date: value } : prev))
                 }
                 onChangeStartingDate={(value) =>
-                    setHydratedHeader((prev) => (prev ? { ...prev, starting_date: value } : prev))
+                    setHeader((prev) => (prev ? { ...prev, starting_date: value } : prev))
                 }
             />
 
-            <PhysicalInventoryFiltersCard
+            <MockLedgerFiltersCard
                 filters={filters}
                 branches={branches}
                 suppliers={suppliers}
@@ -1669,7 +1572,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                         };
                     });
                 }}
-                onLoadProducts={() => setIsConfirmLoadDialogOpen(true)}
+                onLoadProducts={handleLoadProducts}
             />
 
             {groupedRows.length > 0 ? (
@@ -1775,18 +1678,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
                         </div>
 
                         <div className="rounded-2xl border bg-muted/15 px-4 py-3 shadow-sm">
-                            <div className="flex items-center gap-2">
-                                <ScanLine className="h-4 w-4 text-muted-foreground" />
-                                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                                    RFID Rows
-                                </p>
-                            </div>
-                            <p className="mt-1 text-base font-semibold tabular-nums">
-                                {fmtInteger(operationalSummary.rfidRowsCount)}
-                            </p>
-                        </div>
-
-                        <div className="rounded-2xl border bg-muted/15 px-4 py-3 shadow-sm">
                             <p className="text-xs uppercase tracking-wide text-muted-foreground">
                                 Rows With Variance
                             </p>
@@ -1811,7 +1702,7 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 </>
             ) : null}
 
-            <div id="pi-product-finder-sentinel" className="rounded-2xl border bg-background px-4 py-4 shadow-sm">
+            <div id="pi-manual-product-finder-sentinel" className="rounded-2xl border bg-background px-4 py-4 shadow-sm">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                     <div className="space-y-1">
                         <h3 className="text-sm font-semibold tracking-tight">Product Finder</h3>
@@ -1854,11 +1745,6 @@ export function PhysicalInventoryManagementModule(props: Props) {
                                 key: "VARIANCE" as const,
                                 label: "With Variance",
                                 count: quickFilterCounts.VARIANCE,
-                            },
-                            {
-                                key: "RFID" as const,
-                                label: "RFID",
-                                count: quickFilterCounts.RFID,
                             },
                             {
                                 key: "UNCOUNTED" as const,
@@ -1952,64 +1838,19 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 </div>
             </div>
 
-            <PhysicalInventoryTable
+            <MockLedgerTable
                 rows={visibleGroupedRows}
                 isLoading={isBootLoading || isHydratingRecord || isLoadingProducts}
                 canEdit={canEdit}
                 onPhysicalCountChange={handlePhysicalCountChange}
                 onPhysicalCountBlur={handlePhysicalCountBlur}
-                onOpenRfid={(row) => setRfidDialogRow(row)}
             />
 
-            <PhysicalInventoryRFIDDialog
-                open={rfidDialogRow !== null}
-                row={rfidDialogRow}
-                branchId={filters.branch_id}
-                onOpenChange={(open) => {
-                    if (!open) setRfidDialogRow(null);
-                }}
-                onSaved={handleRfidSaved}
-            />
-
-            <PhysicalInventoryGlobalRFIDScannerDialog
-                open={isGlobalScannerOpen}
-                branchId={filters.branch_id}
-                phId={header.id > 0 ? header.id : null}
-                rows={allGroupedChildRows}
-                canEdit={canEdit}
-                onOpenChange={setIsGlobalScannerOpen}
-                onSaved={handleAfterAnyScan}
-            />
-
-            <AlertDialog open={isConfirmLoadDialogOpen} onOpenChange={setIsConfirmLoadDialogOpen}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Load Products for Counting?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This will fetch all eligible products based on your selected Branch, Supplier, Category, and Price Type.
-                            Once loaded, the filter criteria will be locked for this record.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            className="cursor-pointer"
-                            onClick={(event) => {
-                                event.preventDefault();
-                                setIsConfirmLoadDialogOpen(false);
-                                void handleLoadProducts();
-                            }}
-                        >
-                            Load Products
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
 
             <AlertDialog open={openCancelDialog} onOpenChange={setOpenCancelDialog}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Cancel Physical Inventory?</AlertDialogTitle>
+                        <AlertDialogTitle>Cancel Mock Ledger?</AlertDialogTitle>
                         <AlertDialogDescription>
                             This will mark the record as cancelled and make it read-only.
                             Use this only for invalid or abandoned draft sessions.
@@ -2043,7 +1884,188 @@ export function PhysicalInventoryManagementModule(props: Props) {
                 </AlertDialogContent>
             </AlertDialog>
 
-            <PhysicalInventoryAddProductDialog
+            <AlertDialog open={openCommitDialog} onOpenChange={setOpenCommitDialog}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Commit Mock Ledger?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will finalize the Mock Ledger and make it read-only.
+                            Any unresolved SHORT or OVER variances will remain unresolved.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+
+                    <div className="rounded-xl border bg-muted/20 p-3 text-sm">
+                        <div className="flex items-center gap-2 font-medium">
+                            <ClipboardList className="h-4 w-4" />
+                            Variance Summary
+                        </div>
+                        <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                            <p>SHORT total: ₱ {fmtMoney(shortTotal)}</p>
+                            <p>OVER total: ₱ {fmtMoney(overTotal)}</p>
+                        </div>
+                    </div>
+
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="cursor-pointer" disabled={isCommitting}>
+                            Back
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            className="cursor-pointer"
+                            onClick={(event) => {
+                                event.preventDefault();
+                                void handleCommit();
+                            }}
+                            disabled={isCommitting}
+                        >
+                            {isCommitting ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Committing...
+                                </>
+                            ) : (
+                                "Commit ML"
+                            )}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={openPrintChoiceDialog} onOpenChange={setOpenPrintChoiceDialog}>
+                <AlertDialogContent className="max-w-md rounded-2xl">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-lg font-bold tracking-tight">Print Document</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Select the document format you would like to print for this session.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="grid gap-3 py-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
+                                const doc = generateAuditSheetPdf({
+                                    header,
+                                    groupedRows,
+                                    branchName: bName,
+                                    supplierName: sName,
+                                    priceTypeName: pName,
+                                });
+                                if (previewBlobUrl) {
+                                    URL.revokeObjectURL(previewBlobUrl);
+                                }
+                                const blob = doc.output("blob");
+                                const blobUrl = URL.createObjectURL(blob);
+                                setPreviewBlobUrl(blobUrl);
+                                setActiveDocInstance(doc);
+                                setActiveDocName("Mock_Ledger_Audit_Sheet");
+                                setOpenPrintChoiceDialog(false);
+                                setOpenPreviewDialog(true);
+                            }}
+                            className="flex flex-col items-start gap-1 rounded-xl border p-4 text-left hover:bg-muted/50 hover:border-primary/50 transition cursor-pointer active:scale-[0.98]"
+                        >
+                            <span className="font-semibold text-sm">Mock Ledger Audit Sheet</span>
+                            <span className="text-xs text-muted-foreground">Prints standard audit sheet with system counts and empty columns for manual input of physical counts.</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                const doc = await generateManualTallySheetPdf({
+                                    header,
+                                    groupedRows,
+                                    branchName: bName,
+                                    supplierName: sName,
+                                });
+                                if (previewBlobUrl) {
+                                    URL.revokeObjectURL(previewBlobUrl);
+                                }
+                                const blob = doc.output("blob");
+                                const blobUrl = URL.createObjectURL(blob);
+                                setPreviewBlobUrl(blobUrl);
+                                setActiveDocInstance(doc);
+                                setActiveDocName("Mock_Ledger_Manual_Tally_Sheet");
+                                setOpenPrintChoiceDialog(false);
+                                setOpenPreviewDialog(true);
+                            }}
+                            className="flex flex-col items-start gap-1 rounded-xl border p-4 text-left hover:bg-muted/50 hover:border-primary/50 transition cursor-pointer active:scale-[0.98]"
+                        >
+                            <span className="font-semibold text-sm">Mock Ledger Manual Tally Sheet</span>
+                            <span className="text-xs text-muted-foreground">Prints MEN2 MARKETING CORPORATION manual tally sheet for counting on-hand inventory.</span>
+                        </button>
+                    </div>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="cursor-pointer rounded-xl">Cancel</AlertDialogCancel>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={openPreviewDialog} onOpenChange={(open) => {
+                setOpenPreviewDialog(open);
+                if (!open && previewBlobUrl) {
+                    URL.revokeObjectURL(previewBlobUrl);
+                    setPreviewBlobUrl(null);
+                    setActiveDocInstance(null);
+                }
+            }}>
+                <AlertDialogContent style={{ maxWidth: "80rem" }} className="w-[90vw] h-[92vh] flex flex-col justify-between rounded-2xl p-6">
+                    <AlertDialogHeader className="flex flex-row items-center justify-between pb-2 border-b">
+                        <div>
+                            <AlertDialogTitle className="text-lg font-bold tracking-tight">
+                                {activeDocName.replace(/_/g, " ")}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs text-muted-foreground">
+                                Preview the generated document format below.
+                            </AlertDialogDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                className="cursor-pointer rounded-xl font-semibold border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 hover:scale-105 active:scale-95 transition-all text-xs"
+                                onClick={() => {
+                                    if (activeDocInstance) {
+                                        const filename = `${activeDocName}_${header?.ph_no || header?.id}.pdf`;
+                                        activeDocInstance.save(filename);
+                                    }
+                                }}
+                            >
+                                Download PDF
+                            </Button>
+                            <AlertDialogCancel
+                                className="cursor-pointer rounded-xl border border-input hover:bg-accent text-xs"
+                                onClick={() => {
+                                    setOpenPreviewDialog(false);
+                                    if (previewBlobUrl) {
+                                        URL.revokeObjectURL(previewBlobUrl);
+                                        setPreviewBlobUrl(null);
+                                        setActiveDocInstance(null);
+                                    }
+                                }}
+                            >
+                                Close
+                            </AlertDialogCancel>
+                        </div>
+                    </AlertDialogHeader>
+
+                    <div className="flex-1 min-h-0 py-4 bg-muted/10 flex items-center justify-center rounded-xl overflow-hidden mt-3">
+                        {previewBlobUrl ? (
+                            <iframe
+                                src={`${previewBlobUrl}#toolbar=0`}
+                                className="w-full h-full border-0 rounded-xl shadow-inner"
+                            />
+                        ) : (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Generating preview...
+                            </div>
+                        )}
+                    </div>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <MockLedgerAddProductDialog
                 open={openAddProductDialog}
                 onOpenChange={setOpenAddProductDialog}
                 eligibleVariants={eligibleVariants}
