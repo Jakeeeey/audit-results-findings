@@ -30,7 +30,7 @@ import {
     computeAmount,
     computeDifferenceCost,
     computeVariance,
-    cascadeFamilyBaseStockToVariants,
+    convertBaseQtyToDisplayQty,
     createPhysicalInventoryDetailsBulk,
     createPhysicalInventoryHeader,
     derivePhysicalInventoryStatus,
@@ -419,18 +419,17 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             const activeRunningInventoryRows =
                 input?.nextRunningInventoryRows ?? runningInventoryRows;
 
-            if (
-                !activeLookup ||
-                !activeFilters.branch_id ||
-                !activeFilters.supplier_id ||
-                !activeFilters.category_id ||
-                !activeFilters.price_type_id
-            ) {
+            if (!activeLookup || !activeFilters.branch_id) {
                 setGroupedRows([]);
                 return;
             }
 
-            if (activeDetails.length === 0) {
+            if (
+                activeDetails.length === 0 &&
+                (!activeFilters.supplier_id ||
+                    !activeFilters.category_id ||
+                    !activeFilters.price_type_id)
+            ) {
                 setGroupedRows([]);
                 return;
             }
@@ -679,13 +678,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
 
                     setRunningInventoryRows(nextRunningRows);
 
-                    if (
-                        nextFilters.branch_id &&
-                        nextFilters.supplier_id &&
-                        nextFilters.category_id &&
-                        nextFilters.price_type_id &&
-                        existingDetails.length > 0
-                    ) {
+                    if (nextFilters.branch_id && existingDetails.length > 0) {
                         const variants = buildVariantsFromSavedDetails({
                             details: existingDetails,
                             priceTypeId: nextFilters.price_type_id,
@@ -812,8 +805,10 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             !filters.category_id ||
             !filters.price_type_id
         ) {
-            setRunningInventoryRows([]);
-            setGroupedRows([]);
+            if (!hasLoadedDetails) {
+                setRunningInventoryRows([]);
+                setGroupedRows([]);
+            }
             return;
         }
 
@@ -833,6 +828,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         lookupBundle,
         refreshRunningInventoryReadModel,
         header?.cutOff_date,
+        hasLoadedDetails,
     ]);
 
     React.useEffect(() => {
@@ -844,7 +840,9 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             !filters.category_id ||
             !filters.price_type_id
         ) {
-            setGroupedRows([]);
+            if (!hasLoadedDetails) {
+                setGroupedRows([]);
+            }
             return;
         }
 
@@ -858,6 +856,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         isBootLoading,
         lookupBundle,
         runningInventoryRows,
+        hasLoadedDetails,
     ]);
 
     React.useEffect(() => {
@@ -1013,42 +1012,28 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 runningInventoryByProductId.set(row.product_id, current + (row.running_inventory ?? 0));
             }
 
-            // Identify product families and total base stock
-            const familyBaseStockMap = new Map<number, number>();
+            // Identify product families with stock
             const familiesWithStock = new Set<number>();
 
             for (const variant of eligibleVariants) {
                 const familyKey = variant.parent_id ?? variant.product_id;
                 const stock = runningInventoryByProductId.get(variant.product_id) ?? 0;
 
-                const currentFamilyStock = familyBaseStockMap.get(familyKey) ?? 0;
-                familyBaseStockMap.set(familyKey, currentFamilyStock + stock);
-
                 if (stock !== 0) {
                     familiesWithStock.add(familyKey);
                 }
             }
 
-            // Group variants by family and compute allocations
+            // Compute allocations directly based on specific variant's stock
             const systemCountAllocations = new Map<number, number>();
-            const variantsByFamily = new Map<number, typeof eligibleVariants>();
 
             for (const variant of eligibleVariants) {
                 const familyKey = variant.parent_id ?? variant.product_id;
                 if (!familiesWithStock.has(familyKey)) continue;
 
-                if (!variantsByFamily.has(familyKey)) {
-                    variantsByFamily.set(familyKey, []);
-                }
-                variantsByFamily.get(familyKey)!.push(variant);
-            }
-
-            for (const [familyKey, variants] of variantsByFamily.entries()) {
-                const totalBaseStock = familyBaseStockMap.get(familyKey) ?? 0;
-                const allocation = cascadeFamilyBaseStockToVariants(totalBaseStock, variants);
-                for (const [pid, count] of allocation.entries()) {
-                    systemCountAllocations.set(pid, count);
-                }
+                const stock = runningInventoryByProductId.get(variant.product_id) ?? 0;
+                const systemCount = convertBaseQtyToDisplayQty(stock, variant.unit_count);
+                systemCountAllocations.set(variant.product_id, systemCount);
             }
 
             // Load entire families if at least one member has stock
@@ -1140,16 +1125,17 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                     return;
                 }
 
-                // Aggregate running inventory for the ENTIRE FAMILY from all suppliers
-                const familyTotalBaseStock = runningInventoryRows
-                    .filter((r) => r.branch_id === header.branch_id &&
-                        familySiblings.some(s => s.product_id === r.product_id))
-                    .reduce((acc, r) => acc + (r.running_inventory ?? 0), 0);
-
-                const systemCountAllocations = cascadeFamilyBaseStockToVariants(
-                    familyTotalBaseStock,
-                    familySiblings
-                );
+                // Fetch running inventory for specific products
+                const systemCountAllocations = new Map<number, number>();
+                
+                for (const sibling of familySiblings) {
+                    const siblingStock = runningInventoryRows
+                        .filter((r) => r.branch_id === header.branch_id && r.product_id === sibling.product_id)
+                        .reduce((acc, r) => acc + (r.running_inventory ?? 0), 0);
+                        
+                    const systemCount = convertBaseQtyToDisplayQty(siblingStock, sibling.unit_count);
+                    systemCountAllocations.set(sibling.product_id, systemCount);
+                }
 
                 const payloads: PhysicalInventoryDetailUpsertPayload[] = siblingsToLoad.map((sibling) => {
                     const systemCount = systemCountAllocations.get(sibling.product_id) ?? 0;
@@ -1449,6 +1435,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 header={header}
                 status={status}
                 canEdit={canEdit}
+                hasLoadedDetails={hasLoadedDetails}
                 totalAmount={totalAmount}
                 onChangePhNo={(value) =>
                     setHeader((prev) => (prev ? { ...prev, ph_no: value } : prev))

@@ -52,7 +52,8 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({
     familyUnitName,
     costPerUnit,
     beginningBaseBalance,
-    familyRunningTotal,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    familyRunningTotal: _familyRunningTotal,
     branchName,
     productName,
     startDate,
@@ -221,29 +222,7 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({
             };
         });
 
-        // ── Family Balance Consolidation ──────────────────────────────────────
-        // The movement-computed balance only reflects movements visible in the
-        // ledger (usually just one UOM variant). The familyRunningTotal from
-        // v_running_inventory represents the TRUE current stock across ALL UOM
-        // variants (Box + Pack + Piece) for this family at this branch.
-        //
-        // We compute the delta between the movement-derived final balance and
-        // the true family total, then apply it as an offset to every row so
-        // Balance (Box) reflects the consolidated family inventory.
-        if (familyRunningTotal && familyRunningTotal > 0 && enriched.length > 0) {
-            const movementEndBalance = enriched[enriched.length - 1].currentBaseBalance;
-            const familyDelta = familyRunningTotal - movementEndBalance;
-
-            // Only apply if there's a meaningful difference (i.e., sibling UOM
-            // variants contribute inventory not captured by the movement rows)
-            if (Math.abs(familyDelta) >= 1) {
-                const fDiv = familyDivisor || 1;
-                enriched.forEach(row => {
-                    row.currentBaseBalance += familyDelta;
-                    row.displayBalance = row.currentBaseBalance / fDiv;
-                });
-            }
-        }
+        // The displayBalance is cleanly calculated directly from the absolute movement math since beginningBaseBalance is already completely consolidated.
 
         // Pass 2: Group by docNo
         const groups: Array<{
@@ -283,7 +262,7 @@ export const ProductTracingTable = React.forwardRef<HTMLDivElement, Props>(({
         });
 
         return groups;
-    }, [data, uniqueUOMs, familyDivisor, familyRunningTotal, beginningBaseBalance]);
+    }, [data, uniqueUOMs, familyDivisor, beginningBaseBalance]);
 
     const sortedGroupedRows = React.useMemo(() => {
         if (!sortConfig.key || !sortConfig.direction) return groupedRows;

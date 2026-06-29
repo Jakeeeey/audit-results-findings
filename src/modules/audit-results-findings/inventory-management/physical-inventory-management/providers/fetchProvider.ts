@@ -250,7 +250,6 @@ export function getSupplierScopedCategoriesFromLookup(
         lookup.products
             .filter(
                 (product) =>
-                    Number(product.isActive) === 1 &&
                     allowedProductIds.has(Number(product.product_id)) &&
                     product.product_category !== null,
             )
@@ -438,7 +437,6 @@ export function buildEligibleVariants(input: {
     }
 
     return lookup.products
-        .filter((product: ProductRow) => Number(product.isActive) === 1)
         .filter((product: ProductRow) => {
             const familyKey = Number(product.parent_id && product.parent_id > 0
                 ? product.parent_id
@@ -449,7 +447,6 @@ export function buildEligibleVariants(input: {
             if (isAllCategory) return true;
             return Number(product.product_category) === cId;
         })
-        .filter((product: ProductRow) => priceMap.has(Number(product.product_id)))
         .map((product: ProductRow) => {
             const productIdNum = Number(product.product_id);
             const priceRow = priceMap.get(productIdNum) ?? null;
@@ -502,12 +499,32 @@ export async function fetchRunningInventoryByBranch(
     return Array.isArray(rows) ? rows.map(mapRunningInventoryRow) : [];
 }
 
-export async function fetchRunningInventoryFiltered(input: {
+export type RunningInventoryFilterInput = {
     branchName: string;
     supplierShortcut?: string;
     productCategory?: string;
-    cutOffDate?: string | null;
-}): Promise<RunningInventoryRow[]> {
+    cutOffDate?: string;
+};
+
+/**
+ * Converts a datetime string to a proper UTC ISO string for server-side comparison.
+ *
+ * IMPORTANT: This runs in the BROWSER (client-side), not on the server.
+ * The browser already interprets bare datetime strings (e.g. "2026-05-16T05:06:00"
+ * with no timezone suffix) as LOCAL time (UTC+8 for PH users).
+ * So new Date("2026-05-16T05:06:00").getTime() already gives the correct UTC ms.
+ * We MUST NOT manually subtract 8 hours — that would double-convert and make the
+ * cutoff 8 hours too early, allowing after-cutoff transactions to slip through.
+ */
+function toUtcIsoString(localDateStr: string): string {
+    const trimmed = localDateStr.trim();
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return trimmed; // fallback: return as-is if unparseable
+    // .toISOString() always produces a UTC 'Z' string from the internal UTC ms value
+    return d.toISOString();
+}
+
+export async function fetchRunningInventoryFiltered(input: RunningInventoryFilterInput): Promise<RunningInventoryRow[]> {
     const params: Record<string, string> = {
         branchName: input.branchName,
     };
@@ -521,7 +538,8 @@ export async function fetchRunningInventoryFiltered(input: {
     }
 
     if (input.cutOffDate && input.cutOffDate.trim()) {
-        params.cutOffDate = input.cutOffDate.trim();
+        // Normalize to UTC before sending to the API
+        params.cutOffDate = toUtcIsoString(input.cutOffDate.trim());
     }
 
     const rows = await apiGet<RunningInventoryApiRow[]>(
@@ -810,10 +828,10 @@ export function buildVariantsFromSavedDetails(input: {
 
     const detailMap = new Map<number, PhysicalInventoryDetailRow>();
     for (const detail of details) {
-        detailMap.set(detail.product_id, detail);
+        detailMap.set(Number(detail.product_id), detail);
     }
 
-    const productIds = new Set(details.map((row) => row.product_id));
+    const productIds = new Set(details.map((row) => Number(row.product_id)));
 
     const categoryMap = new Map<number, CategoryRow>();
     for (const row of lookup.categories) {
@@ -833,31 +851,32 @@ export function buildVariantsFromSavedDetails(input: {
     }
 
     return lookup.products
-        .filter((product) => productIds.has(product.product_id))
+        .filter((product) => productIds.has(Number(product.product_id)))
         .map((product) => {
-            const detail = detailMap.get(product.product_id);
+            const productIdNum = Number(product.product_id);
+            const detail = detailMap.get(productIdNum);
             const category =
                 product.product_category !== null
-                    ? categoryMap.get(product.product_category) ?? null
+                    ? categoryMap.get(Number(product.product_category)) ?? null
                     : null;
             const unit =
                 product.unit_of_measurement !== null
-                    ? unitMap.get(product.unit_of_measurement) ?? null
+                    ? unitMap.get(Number(product.unit_of_measurement)) ?? null
                     : null;
-            const priceRow = priceMap.get(product.product_id) ?? null;
+            const priceRow = priceMap.get(productIdNum) ?? null;
 
             return {
-                product_id: product.product_id,
-                parent_id: product.parent_id,
+                product_id: productIdNum,
+                parent_id: product.parent_id ? Number(product.parent_id) : null,
                 product_code: product.product_code,
                 product_name: product.product_name,
                 barcode: product.barcode,
-                category_id: product.product_category,
+                category_id: product.product_category ? Number(product.product_category) : null,
                 category_name: category?.category_name ?? null,
-                unit_id: product.unit_of_measurement,
+                unit_id: product.unit_of_measurement ? Number(product.unit_of_measurement) : null,
                 unit_name: unit?.unit_name ?? null,
                 unit_shortcut: unit?.unit_shortcut ?? null,
-                unit_order: unit?.order ?? null,
+                unit_order: unit?.order ? Number(unit.order) : null,
                 unit_count: normalizeUnitCount(product.unit_of_measurement_count),
                 unit_price: detail?.unit_price ?? priceRow?.price ?? null,
                 cost_per_unit: product.cost_per_unit,
@@ -963,12 +982,7 @@ export function resolveRunningInventoryFilterParams(input: {
     suppliers: SupplierRow[];
     lookup: ProductLookupBundle;
     cutOffDate?: string | null;
-}): {
-    branchName: string;
-    supplierShortcut?: string;
-    productCategory?: string;
-    cutOffDate?: string;
-} {
+}): RunningInventoryFilterInput {
     const branch = input.branches.find((row) => row.id === input.branchId);
     if (!branch?.branch_name?.trim()) {
         throw new Error("Unable to resolve branch name for running inventory filter.");

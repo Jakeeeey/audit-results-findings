@@ -1,38 +1,23 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Clock, TrendingUp, Users, AlertTriangle } from 'lucide-react';
 import { useSubsystemList } from './hooks/useSubsystemList';
 import { SubsystemFilterBar } from './components/FilterBar';
+import { SubsystemAnalyticsChart } from './components/SubsystemChart';
 import { SubsystemDocTypeChart } from './components/DocTypeChart';
 import { SubsystemUserChart } from './components/UserChart';
-import { SubsystemPerDayChart } from './components/PerDayChart';
-import { AdherenceRateTrendChart } from './components/AdherenceRateTrendChart';
-import { AgingAnalysisChart } from './components/AgingAnalysisChart';
-import { SubsystemTable } from './components/Table';
-
-function renderIcon(iconType?: string, color?: string) {
-  const iconProps = { className: `w-4 h-4 ${color}` };
-  switch (iconType) {
-    case 'total':        return <Clock {...iconProps} />;
-    case 'nonCompliant': return <AlertTriangle {...iconProps} />;
-    case 'highest':      return <TrendingUp {...iconProps} />;
-    case 'average':      return <FileText {...iconProps} />;
-    case 'users':        return <Users {...iconProps} />;
-    default:             return null;
-  }
-}
+import { DocTypeDetailModal } from './components/DocTypeDetailModal';
+import { UserDetailModal } from './components/UserDetailModal';
 
 export default function MasterListModule() {
+  const router = useRouter();
   const {
     rows,
-    summaryCards,
+    subsystemChart,
     docTypeChart,
     userChart,
-    perDayChart,
-    adherenceRateTrend,
-    agingBuckets,
     loading,
     docTypes,
     userNames,
@@ -41,6 +26,9 @@ export default function MasterListModule() {
     refresh,
   } = useSubsystemList();
 
+  const [selectedDocType, setSelectedDocType] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+
   if (loading) return (
     <div className="p-8 space-y-6">
       <div>
@@ -48,22 +36,11 @@ export default function MasterListModule() {
         <Skeleton className="h-4 w-1/2" />
       </div>
       <Skeleton className="h-10 w-full" />
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-24" />)}
+      <Skeleton className="h-[350px] w-full" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Skeleton className="h-[300px]" />
+        <Skeleton className="h-[300px]" />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Skeleton className="h-80" />
-        <Skeleton className="h-80" />
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Skeleton className="h-80" />
-        <Skeleton className="h-80" />
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Skeleton className="h-80" />
-        <Skeleton className="h-80" />
-      </div>
-      <Skeleton className="h-96" />
     </div>
   );
 
@@ -73,7 +50,9 @@ export default function MasterListModule() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Master List</h1>
-        <p className="text-sm text-muted-foreground mt-1">Track document adherence and compliance status across all subsystems</p>
+        <p className="text-sm text-muted-foreground mt-1 font-medium">
+          Track document adherence and compliance status across all subsystems
+        </p>
       </div>
 
       {/* Filter bar */}
@@ -94,48 +73,51 @@ export default function MasterListModule() {
         />
       </div>
 
-      {/* Summary Cards */}
-      <div className="flex gap-3 overflow-x-auto">
-        {summaryCards.map((stat) => (
-          <Card key={stat.label} className="shadow-none border-gray-200 flex-1 min-w-[180px]">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-3">
-              <CardTitle className="text-xs font-medium text-muted-foreground">{stat.label}</CardTitle>
-              <div className="p-1.5 rounded-full">{renderIcon(stat.icon, stat.color)}</div>
-            </CardHeader>
-            <CardContent className="px-3 pb-3">
-              <div className="text-lg font-bold">{stat.value}</div>
-              {stat.subtitle && <p className="text-xs text-muted-foreground mt-0.5 truncate" title={stat.subtitle}>{stat.subtitle}</p>}
-            </CardContent>
-          </Card>
-        ))}
+      {/* Charts Grid */}
+      <div className="space-y-6">
+        {/* Top Row: Subsystem compliance (Full Width) */}
+        <div className="w-full">
+          <SubsystemAnalyticsChart 
+            data={subsystemChart} 
+            onBarClick={(subsystem) => {
+              router.push(`/arf/document-adherence/${subsystem.toLowerCase()}`);
+            }}
+          />
+        </div>
+
+        {/* Bottom Row: Doc Type Chart & User Chart (2 Columns) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SubsystemDocTypeChart 
+            data={docTypeChart} 
+            onBarClick={(docType) => setSelectedDocType(docType)}
+          />
+          <SubsystemUserChart 
+            data={userChart} 
+            onUserClick={(userName) => setSelectedUser(userName)}
+          />
+        </div>
       </div>
 
-      {/* Charts Row 1 — Per Doc Type + Per User */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SubsystemDocTypeChart data={docTypeChart} />
-        <AgingAnalysisChart data={agingBuckets} />
-        
-      </div>
+      {/* Modals */}
+      {selectedDocType && (
+        <DocTypeDetailModal
+          open={!!selectedDocType}
+          onOpenChange={(open) => { if (!open) setSelectedDocType(null); }}
+          docType={selectedDocType}
+          rows={rows}
+          onSuccess={refresh}
+        />
+      )}
 
-      {/* Charts Row 2 — Per Day (Line) + Adherence Rate Trend (Line) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SubsystemUserChart data={userChart} userNames={userNames} />
-        <AdherenceRateTrendChart data={adherenceRateTrend} />
-      </div>
-
-      {/* Charts Row 3 — Compliant vs Non-Compliant (Pie) + Aging Analysis (Bar) */}
-      <div className="grid grid-cols-1 lg:grid-cols-1 gap-4">
-        <SubsystemPerDayChart data={perDayChart} />
-      </div>
-
-      {/* Table */}
-      <SubsystemTable
-        rows={rows}
-        loading={loading}
-        search={filters.search ?? ''}
-        isUserFilterActive={!!filters.user}
-        onSuccess={refresh}
-      />
+      {selectedUser && (
+        <UserDetailModal
+          open={!!selectedUser}
+          onOpenChange={(open) => { if (!open) setSelectedUser(null); }}
+          userName={selectedUser}
+          rows={rows}
+          onSuccess={refresh}
+        />
+      )}
 
     </div>
   );
