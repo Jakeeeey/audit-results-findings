@@ -28,10 +28,6 @@ export default function PdfTestPage() {
     useEffect(() => {
         const init = async () => {
             try {
-                // SWR Style: Load from cache first
-                const cached = localStorage.getItem('pdf_company_data');
-                if (cached) setCompanyData(JSON.parse(cached));
-
                 // Fetch Company Data and Templates in parallel
                 const [compRes, tpls] = await Promise.all([
                     fetch("/api/pdf/company"),
@@ -42,7 +38,6 @@ export default function PdfTestPage() {
                     const result = await compRes.json();
                     const company = result.data?.[0] || (Array.isArray(result.data) ? null : result.data);
                     setCompanyData(company);
-                    if (company) localStorage.setItem('pdf_company_data', JSON.stringify(company));
                 }
 
                 setTemplates(tpls);
