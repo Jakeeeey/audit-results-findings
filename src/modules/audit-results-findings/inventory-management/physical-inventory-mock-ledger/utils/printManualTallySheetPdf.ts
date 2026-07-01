@@ -37,18 +37,10 @@ export async function generateManualTallySheetPdf(args: GenerateManualTallySheet
     // Fetch company data
     let companyData = null;
     try {
-        const cached = localStorage.getItem("pdf_company_data");
-        if (cached) {
-            companyData = JSON.parse(cached);
-        } else {
-            const compRes = await fetch("/api/pdf/company");
-            if (compRes.ok) {
-                const result = await compRes.json();
-                companyData = result.data?.[0] || result.data || null;
-                if (companyData) {
-                    localStorage.setItem("pdf_company_data", JSON.stringify(companyData));
-                }
-            }
+        const compRes = await fetch("/api/pdf/company");
+        if (compRes.ok) {
+            const result = await compRes.json();
+            companyData = result.data?.[0] || result.data || null;
         }
     } catch (e) {
         console.error("Error loading company data:", e);
