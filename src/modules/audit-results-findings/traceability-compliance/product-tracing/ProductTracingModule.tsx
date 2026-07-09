@@ -157,6 +157,16 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
             }).map(row => ({ ...row }));
             
             fullLedger.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+            
+            // 1. Calculate delta across the FULL ledger, before any history is dropped for PH overrides
+            let unpatchedLedgerTotal = 0;
+            fullLedger.forEach(row => {
+                unpatchedLedgerTotal += getMovement(row) - (row.patchDeltaBase || 0);
+            });
+            
+            const delta = familyRunningTotal - unpatchedLedgerTotal;
+            if (Math.abs(delta) >= 1) fullLedgerDelta = delta;
+
             const fullFirstPH = fullLedger.findIndex(row => row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH"));
             
             if (fullFirstPH > -1) {
@@ -179,12 +189,6 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                     }
                 });
             }
-            
-            let ledgerTotal = 0;
-            fullLedger.forEach(row => ledgerTotal += getMovement(row));
-            
-            const delta = familyRunningTotal - ledgerTotal;
-            if (Math.abs(delta) >= 1) fullLedgerDelta = delta;
         }
 
         if (firstPHIndex > -1) {
