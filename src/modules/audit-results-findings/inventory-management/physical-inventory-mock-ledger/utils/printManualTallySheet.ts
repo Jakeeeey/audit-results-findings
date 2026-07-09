@@ -5,6 +5,7 @@ export type PrintManualTallySheetArgs = {
     groupedRows: GroupedPhysicalInventoryRow[];
     branchName: string;
     supplierName: string;
+    warehousemanName?: string;
 };
 
 function escapeHtml(value: string): string {
@@ -14,12 +15,6 @@ function escapeHtml(value: string): string {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
-}
-
-function fmtNumber(value: number): string {
-    return value.toLocaleString("en-PH", {
-        maximumFractionDigits: 0,
-    });
 }
 
 function formatDateString(value: string | null | undefined): string {
@@ -38,47 +33,112 @@ function formatDateString(value: string | null | undefined): string {
 }
 
 export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
-    const { header, groupedRows, branchName, supplierName } = args;
+    const { header, groupedRows, branchName, supplierName, warehousemanName } = args;
+
+    // Calculate max length of Category name (in characters)
+    let maxCategoryChars = 8; // length of "Category"
+    for (const group of groupedRows) {
+        const catText = group.category_name ?? "";
+        if (catText.length > maxCategoryChars) {
+            maxCategoryChars = catText.length;
+        }
+    }
+    // Assume roughly 0.75% width per character (7.5pt/Arial style)
+    const categoryPct = Math.max(6, maxCategoryChars * 0.75);
+
+    // Calculate max length of Unit (in characters)
+    let maxUnitChars = 4; // length of "Unit"
+    for (const group of groupedRows) {
+        for (const child of group.rows) {
+            const unitText = child.unit_name || child.unit_shortcut || "PCS";
+            if (unitText.length > maxUnitChars) {
+                maxUnitChars = unitText.length;
+            }
+        }
+    }
+    const unitPct = Math.max(5, maxUnitChars * 0.75);
+
+    // Remaining layout percentages (Phys Qty and TOTAL removed, 12 tally columns)
+    const tallyColsPct = 61.2; // 5.1% each (12 columns)
+
+    const descriptionPct = Math.max(20, 100 - categoryPct - unitPct - tallyColsPct);
 
     let tableRowsHtml = "";
 
-    for (const group of groupedRows) {
-        const sortedChildren = [...group.rows].sort((a, b) => {
-            return a.unit_count - b.unit_count;
-        });
+    const sortedGroups = [...groupedRows].sort((a, b) => {
+        const catA = a.category_name ?? "";
+        const catB = b.category_name ?? "";
+        const catCompare = catA.localeCompare(catB);
+        if (catCompare !== 0) return catCompare;
+
+        const nameA = a.base_product_name ?? "";
+        const nameB = b.base_product_name ?? "";
+        return nameA.localeCompare(nameB);
+    });
+
+    for (const group of sortedGroups) {
+        const sortedChildren = [...group.rows]
+            .filter((child) => {
+                const uomName = (child.unit_name || child.unit_shortcut || "").trim().toLowerCase();
+                return uomName !== "pack" && uomName !== "packs";
+            })
+            .sort((a, b) => {
+                return b.unit_count - a.unit_count; // Descending: Boxes → Pieces
+            });
+
+        if (sortedChildren.length === 0) continue;
 
         for (let idx = 0; idx < sortedChildren.length; idx++) {
             const child = sortedChildren[idx];
-            const codeCell = escapeHtml(child.product_code ?? "");
+            const categoryCell = escapeHtml(child.category_name || group.category_name || "");
             const descCell = escapeHtml(child.product_name || group.base_product_name);
             const unitCell = escapeHtml(child.unit_name ?? child.unit_shortcut ?? "PCS");
-            const systemQtyVal = fmtNumber(child.system_count);
 
-            tableRowsHtml += `
-                <tr>
-                    <td class="code-cell">${codeCell}</td>
-                    <td class="desc-cell">${descCell}</td>
-                    <td class="unit-cell">${unitCell}</td>
-                    <td class="qty-cell">${systemQtyVal}</td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="tally-cell"></td>
-                    <td class="total-cell"></td>
-                </tr>
-            `;
+            if (idx === 0) {
+                tableRowsHtml += `
+                    <tr>
+                        <td class="category-cell" rowspan="${sortedChildren.length}">${categoryCell}</td>
+                        <td class="desc-cell" rowspan="${sortedChildren.length}">${descCell}</td>
+                        <td class="unit-cell">${unitCell}</td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                    </tr>
+                `;
+            } else {
+                tableRowsHtml += `
+                    <tr>
+                        <td class="unit-cell">${unitCell}</td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                        <td class="tally-cell"></td>
+                    </tr>
+                `;
+            }
         }
     }
 
     const html = `
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="utf-8" />
     <title>Mock Ledger Manual Tally Sheet</title>
@@ -96,16 +156,7 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
         }
 
         body {
-            padding: 20px;
-        }
-
-        .header-title {
-            text-align: center;
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 2px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            padding: 8px;
         }
 
         .header-subtitle {
@@ -117,28 +168,22 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
             text-decoration: underline;
         }
 
-        .meta-table {
+        .meta-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             width: 100%;
-            border-collapse: collapse;
             margin-bottom: 15px;
             font-size: 10px;
         }
 
-        .meta-table td {
-            border: none;
-            padding: 3px 0;
-            vertical-align: top;
-        }
-
-        .meta-label {
-            font-weight: bold;
+        .meta-field {
             white-space: nowrap;
-            padding-right: 5px;
         }
 
-        .meta-value {
-            border-bottom: 1px solid #ccc;
-            padding-right: 15px;
+        .meta-field strong {
+            font-weight: bold;
+            margin-right: 4px;
         }
 
         table.tally-table {
@@ -149,7 +194,7 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
         table.tally-table th {
             background-color: #e0e0e0;
             border: 1px solid #666;
-            padding: 4px 2px;
+            padding: 4px 6px;
             font-size: 9px;
             font-weight: bold;
             text-align: center;
@@ -158,36 +203,29 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
 
         table.tally-table td {
             border: 1px solid #666;
-            padding: 4px 6px;
+            padding: 1px 4px;
             vertical-align: middle;
-            height: 25px;
+            height: 11px;
         }
 
-        .code-cell {
-            width: 12%;
+        .category-cell {
+            width: ${categoryPct}%;
             white-space: nowrap;
             font-size: 9px;
         }
 
         .desc-cell {
-            width: 28%;
+            width: ${descriptionPct}%;
             font-weight: normal;
         }
 
         .unit-cell {
-            width: 8%;
-            text-align: center;
-        }
-
-        .qty-cell {
-            width: 8%;
-            text-align: right;
-            font-weight: bold;
-            background-color: #fcfcfc;
+            width: ${unitPct}%;
+            text-align: left;
         }
 
         .tally-cell {
-            width: 3.5%;
+            width: 5.1%;
         }
 
         .total-cell {
@@ -197,7 +235,7 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
 
         .slash-header {
             position: relative;
-            width: 3.5%;
+            width: 5.1%;
             padding: 0 !important;
             height: 25px;
         }
@@ -213,9 +251,23 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
             pointer-events: none;
         }
 
+        tr.print-header-row th {
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 0 10px 0 !important;
+        }
+
+        .page-number-value::after {
+            content: counter(page);
+        }
+
         @media print {
+            @page {
+                size: 13in 8.5in;
+                margin: 10mm;
+            }
             body {
-                padding: 10px;
+                padding: 5px;
             }
             tr {
                 break-inside: avoid;
@@ -227,33 +279,27 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
     </style>
 </head>
 <body>
-    <div class="header-title">MEN2 MARKETING CORPORATION</div>
-    <div class="header-subtitle">MOCK LEDGER - MANUAL TALLY SHEET</div>
-
-    <table class="meta-table">
-        <tr>
-            <td class="meta-label" style="width: 8%;">Control No:</td>
-            <td class="meta-value" style="width: 25%;">${escapeHtml(header.ph_no || "")}</td>
-            <td class="meta-label" style="width: 5%;">PH:</td>
-            <td class="meta-value" style="width: 20%;">${header.id}</td>
-            <td class="meta-label" style="width: 6%;">Branch:</td>
-            <td class="meta-value" style="width: 36%;">${escapeHtml(branchName)}</td>
-        </tr>
-        <tr>
-            <td class="meta-label">Supplier:</td>
-            <td class="meta-value" colspan="3">${escapeHtml(supplierName)}</td>
-            <td class="meta-label">Cut-off Date:</td>
-            <td class="meta-value">${formatDateString(header.cutOff_date)}</td>
-        </tr>
-    </table>
-
     <table class="tally-table">
         <thead>
+            <!-- Repeating header metadata row inside thead so browser prints it on every page -->
+            <tr class="print-header-row">
+                <th colspan="15">
+                    <div class="header-subtitle">MOCK LEDGER - MANUAL TALLY SHEET</div>
+                    <div class="meta-container">
+                        <div class="meta-field"><strong>Control No:</strong> <span>${escapeHtml(header.ph_no || "")}</span></div>
+                        <div class="meta-field"><strong>Branch:</strong> <span>${escapeHtml(branchName)}</span></div>
+                        <div class="meta-field"><strong>Supplier:</strong> <span>${escapeHtml(supplierName)}</span></div>
+                        <div class="meta-field"><strong>Warehouseman:</strong> <span>${escapeHtml(warehousemanName || "")}</span></div>
+                        <div class="meta-field"><strong>Cut-off Date:</strong> <span>${formatDateString(header.cutOff_date)}</span></div>
+                        <div class="meta-field"><strong>Page:</strong> <span class="page-number-value"></span></div>
+                    </div>
+                </th>
+            </tr>
+            <!-- Main column headers -->
             <tr>
-                <th style="width: 12%;">Code</th>
-                <th style="width: 28%;">Description</th>
-                <th style="width: 8%;">Unit</th>
-                <th style="width: 8%;">Phys Qty</th>
+                <th style="width: ${categoryPct}%;">Category</th>
+                <th style="width: ${descriptionPct}%;">Description</th>
+                <th style="width: ${unitPct}%;">Unit</th>
                 <th class="slash-header"></th>
                 <th class="slash-header"></th>
                 <th class="slash-header"></th>
@@ -264,7 +310,8 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
                 <th class="slash-header"></th>
                 <th class="slash-header"></th>
                 <th class="slash-header"></th>
-                <th style="width: 7%;">TOTAL</th>
+                <th class="slash-header"></th>
+                <th class="slash-header"></th>
             </tr>
         </thead>
         <tbody>
