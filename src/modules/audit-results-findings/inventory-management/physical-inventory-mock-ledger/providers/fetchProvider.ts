@@ -20,6 +20,7 @@ import type {
     RunningInventoryRow,
     SupplierRow,
     UnitRow,
+    WarehousemanRow,
 } from "../types";
 import {
     buildGroupedPhysicalInventoryRows,
@@ -338,6 +339,7 @@ export async function fetchProducts(): Promise<ProductRow[]> {
     return directusGetItems<ProductRow>(TABLES.products, {
         fields:
             "product_id,parent_id,product_code,product_name,barcode,product_category,product_brand,unit_of_measurement,unit_of_measurement_count,isActive,cost_per_unit",
+        filter: JSON.stringify({ isActive: { _eq: 1 } }),
         sort: "product_name",
         limit: "-1",
     });
@@ -985,4 +987,31 @@ export async function fetchNextPhysicalInventoryNumber(): Promise<string> {
     // The first record in numericRows is our true "latest" numeric ID
     const latest = numericRows[0] || rows[0] || null;
     return buildNextPhNoFromLatest(latest?.ph_no);
+}
+
+export async function fetchWarehousemen(): Promise<WarehousemanRow[]> {
+    try {
+        // Step 1: Find the department ID for "Warehouse"
+        const depts = await directusGetItems<{ department_id: number }>("department", {
+            "filter[department_name][_eq]": "Warehouse",
+            fields: "department_id",
+            limit: "1",
+        });
+
+        const warehouseDeptId = depts?.[0]?.department_id;
+        if (!warehouseDeptId) {
+            console.warn("Warehouse department not found in database.");
+            return [];
+        }
+
+        // Step 2: Fetch users who belong to this department ID
+        return await directusGetItems<WarehousemanRow>("user", {
+            "filter[user_department][_eq]": String(warehouseDeptId),
+            fields: "user_id,user_fname,user_lname,user_position",
+            limit: "-1",
+        });
+    } catch (e) {
+        console.error("Failed to fetch warehousemen:", e);
+        return [];
+    }
 }

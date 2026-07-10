@@ -27,6 +27,7 @@ export type ProductMovementRow = {
     system_count?: number | null;
     // Client-side computed
     balance?: number;
+    patchDeltaBase?: number;
 };
 
 export type ConsolidationDispatchTraceRow = {

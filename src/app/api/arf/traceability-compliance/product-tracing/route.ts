@@ -68,7 +68,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // Patching Layer: Supplemental data for Consolidated Documents & Physical Inventory Counts
         if (Array.isArray(data) && parentId) {
             try {
-                const { fetchConsolidationItems, fetchPHCountsForTracing, fetchAllFamilyPHs, getFamilyUnit } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
+                const { fetchPHCountsForTracing, fetchAllFamilyPHs, getFamilyUnit } = await import("@/modules/audit-results-findings/traceability-compliance/product-tracing/service");
                 const famUnit = await getFamilyUnit(parentId);
 
                 // 0. Proactively fetch ALL relevant PH documents for this family/branch from Directus.
@@ -93,10 +93,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 const nonPhData = [...data];
 
                 // Per-request cache to avoid redundant calls for same docNo in the ledger
-                const consolidationCache = new Map<string, unknown[]>();
+                // const consolidationCache = new Map<string, unknown[]>();
                 const phCache = new Map<string, unknown[]>();
 
-                const patchedConsolidations = new Set<string>();
+                // const patchedConsolidations = new Set<string>();
                 const docExistingOutBase = new Map<string, number>();
 
                 nonPhData.forEach((row: { docType?: string; docNo?: string; outBase?: number }) => {
@@ -118,6 +118,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     product_id?: number | string;
                     system_count?: number;
                     physical_count?: number;
+                    systemCount?: number;
+                    physicalCount?: number;
+                    variance?: number;
+                    unitCount?: number;
+                    patchDeltaBase?: number;
                 }) => {
                     const docT = String(row.docType || "").toUpperCase();
                     const docN = String(row.docNo || "").toUpperCase();
@@ -126,6 +131,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     // 1. Patch Consolidation Dispatches (Outbound movement)
                     const isConsolidated = docT === "CONSOLIDATION DISPATCHES" || docN.startsWith("CLDTO");
                     if (isConsolidated && (row.inBase === 0 && row.outBase === 0)) {
+                        // User requested to trust the database values and skip patching
+                        /*
                         let shouldPatch = false;
                         if (!patchedConsolidations.has(cleanDocN)) {
                             patchedConsolidations.add(cleanDocN);
@@ -150,12 +157,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
                                 const existingOut = docExistingOutBase.get(cleanDocN) || 0;
                                 if (totalQty > existingOut) {
+                                    const oldOut = row.outBase || 0;
                                     row.outBase = totalQty - existingOut;
+                                    // patchDeltaBase: (newIn - newOut) - (oldIn - oldOut) = oldOut - newOut
+                                    (row as any).patchDeltaBase = ((row as any).patchDeltaBase || 0) + (oldOut - row.outBase);
                                 }
                             } catch (err) {
                                 console.error(`[Product Tracing Proxy] Consolidation Patch failed for ${row.docNo}:`, err);
                             }
                         }
+                        */
                     }
 
                     // 2. Patch Physical Inventory Counts (Variance calculation) - kept for safety if any PH row remains
@@ -174,8 +185,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                                     return String(dPid) === String(pid);
                                 });
                                 if (detail) {
+                                    const oldSys = row.system_count !== undefined ? row.system_count : (row.systemCount || 0);
+                                    const oldPhys = row.physical_count !== undefined ? row.physical_count : (row.physicalCount || 0);
+                                    const oldVar = row.variance ?? (oldPhys - oldSys);
+
                                     row.system_count = detail.system_count;
                                     row.physical_count = detail.physical_count;
+
+                                    const newVar = (detail.physical_count || 0) - (detail.system_count || 0);
+                                    const unitCount = row.unitCount || 1;
+                                    row.patchDeltaBase = (row.patchDeltaBase || 0) + ((newVar - oldVar) * unitCount);
                                 }
 
                                 // Update registry for seen documents
@@ -230,6 +249,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                             synth.variance = (Number(detail.physical_count) || 0) - (Number(detail.system_count) || 0);
                             synth.inBase = 0;
                             synth.outBase = 0;
+                            synth.patchDeltaBase = (synth.variance as number) * (synth.unitCount as number);
                             nonPhData.push(synth as Record<string, unknown>);
                             info.seenIds.add(dPid);
                         }

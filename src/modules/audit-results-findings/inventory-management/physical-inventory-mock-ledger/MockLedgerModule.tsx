@@ -21,6 +21,7 @@ import type {
     ProductLookupBundle,
     RunningInventoryRow,
     SupplierRow,
+    WarehousemanRow,
 } from "./types";
 import {
     buildEligibleVariants,
@@ -45,6 +46,7 @@ import {
     fetchProductLookupBundle,
     fetchRunningInventoryFiltered,
     fetchSuppliers,
+    fetchWarehousemen,
     getSupplierScopedCategoriesFromLookup,
     resolveRunningInventoryFilterParams,
     sumHeaderTotalAmount,
@@ -261,6 +263,8 @@ export function MockLedgerModule(props: Props) {
     const [categories, setCategories] = React.useState<CategoryRow[]>([]);
     const [priceTypes, setPriceTypes] = React.useState<PriceTypeRow[]>([]);
     const [lookupBundle, setLookupBundle] = React.useState<ProductLookupBundle | null>(null);
+    const [warehousemen, setWarehousemen] = React.useState<WarehousemanRow[]>([]);
+    const [selectedWarehousemanId, setSelectedWarehousemanId] = React.useState<number | null>(null);
 
     const filteredRunningInventoryCacheRef = React.useRef<Record<string, RunningInventoryRow[]>>(
         {},
@@ -626,12 +630,13 @@ export function MockLedgerModule(props: Props) {
                 setRunningInventoryRows([]);
                 dirtyDetailIdsRef.current.clear();
 
-                const [nextBranches, nextSuppliers, nextPriceTypes, nextLookup] =
+                const [nextBranches, nextSuppliers, nextPriceTypes, nextLookup, nextWarehousemen] =
                     await Promise.all([
                         fetchBranches(),
                         fetchSuppliers(),
                         fetchPriceTypes(),
                         fetchProductLookupBundle(),
+                        fetchWarehousemen(),
                     ]);
 
                 if (cancelled) return;
@@ -640,6 +645,7 @@ export function MockLedgerModule(props: Props) {
                 setSuppliers(nextSuppliers);
                 setPriceTypes(nextPriceTypes);
                 setLookupBundle(nextLookup);
+                setWarehousemen(nextWarehousemen);
 
                 if (initialHeaderId && initialHeaderId > 0) {
                     setIsHydratingRecord(true);
@@ -1968,33 +1974,97 @@ export function MockLedgerModule(props: Props) {
                             <span className="font-semibold text-sm">Mock Ledger Audit Sheet</span>
                             <span className="text-xs text-muted-foreground">Prints standard audit sheet with system counts and empty columns for manual input of physical counts.</span>
                         </button>
-                        <button
-                            type="button"
-                            onClick={async () => {
-                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
-                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
-                                const doc = await generateManualTallySheetPdf({
-                                    header,
-                                    groupedRows,
-                                    branchName: bName,
-                                    supplierName: sName,
-                                });
-                                if (previewBlobUrl) {
-                                    URL.revokeObjectURL(previewBlobUrl);
-                                }
-                                const blob = doc.output("blob");
-                                const blobUrl = URL.createObjectURL(blob);
-                                setPreviewBlobUrl(blobUrl);
-                                setActiveDocInstance(doc);
-                                setActiveDocName("Mock_Ledger_Manual_Tally_Sheet");
-                                setOpenPrintChoiceDialog(false);
-                                setOpenPreviewDialog(true);
-                            }}
-                            className="flex flex-col items-start gap-1 rounded-xl border p-4 text-left hover:bg-muted/50 hover:border-primary/50 transition cursor-pointer active:scale-[0.98]"
-                        >
-                            <span className="font-semibold text-sm">Mock Ledger Manual Tally Sheet</span>
-                            <span className="text-xs text-muted-foreground">Prints MEN2 MARKETING CORPORATION manual tally sheet for counting on-hand inventory.</span>
-                        </button>
+                        
+                        <div className="flex flex-col gap-3 rounded-xl border p-4 text-left transition bg-card">
+                            <div className="flex flex-col gap-1">
+                                <span className="font-semibold text-sm">Mock Ledger Manual Tally Sheet</span>
+                                <span className="text-xs text-muted-foreground">Prints MEN2 MARKETING CORPORATION manual tally sheet for counting on-hand inventory.</span>
+                            </div>
+                            
+                            <div className="flex flex-col gap-1.5 pt-2 border-t border-dashed">
+                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Warehouseman</label>
+                                <select
+                                    value={selectedWarehousemanId ?? ""}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSelectedWarehousemanId(val ? Number(val) : null);
+                                    }}
+                                    className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <option value="">-- Select Warehouseman --</option>
+                                    {warehousemen.map((u) => (
+                                        <option key={u.user_id} value={u.user_id}>
+                                            {u.user_fname} {u.user_lname} {u.user_position ? `(${u.user_position})` : ""}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <Button
+                                type="button"
+                                onClick={async () => {
+                                    if (!selectedWarehousemanId) {
+                                        toast.error("Please select a warehouseman first.");
+                                        return;
+                                    }
+                                    const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                    const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                    const wName = (() => {
+                                        const found = warehousemen.find((w) => w.user_id === selectedWarehousemanId);
+                                        return found ? `${found.user_fname} ${found.user_lname}` : "";
+                                    })();
+                                    const supplierId = filters.supplier_id ?? header.supplier_id;
+                                    const priceTypeId = filters.price_type_id ?? header.price_type ?? null;
+                                    const branchId = filters.branch_id ?? header.branch_id;
+
+                                    // Build all supplier product variants (not just detail rows)
+                                    // Use the "All" category so no category filter is applied
+                                    const allCategoryId = lookupBundle?.categories.find(
+                                        (c) => c.is_all_category
+                                    )?.category_id ?? 0;
+
+                                    const allSupplierVariants = lookupBundle && supplierId
+                                        ? buildEligibleVariants({
+                                            supplierId: Number(supplierId),
+                                            categoryId: allCategoryId,
+                                            priceTypeId: Number(priceTypeId ?? 0),
+                                            lookup: lookupBundle,
+                                        })
+                                        : [];
+
+                                    // Group them the same way the screen does
+                                    const allSupplierGroupedRows = buildGroupedPhysicalInventoryRows({
+                                        branch_id: Number(branchId ?? 0),
+                                        variants: allSupplierVariants,
+                                        details: detailRows,
+                                        runningInventoryRows,
+                                        ph_id: header?.id ?? null,
+                                        ignoreRfid: true,
+                                    });
+
+                                    const doc = await generateManualTallySheetPdf({
+                                        header,
+                                        groupedRows: allSupplierGroupedRows,
+                                        branchName: bName,
+                                        supplierName: sName,
+                                        warehousemanName: wName,
+                                    });
+                                    if (previewBlobUrl) {
+                                        URL.revokeObjectURL(previewBlobUrl);
+                                    }
+                                    const blob = doc.output("blob");
+                                    const blobUrl = URL.createObjectURL(blob);
+                                    setPreviewBlobUrl(blobUrl);
+                                    setActiveDocInstance(doc);
+                                    setActiveDocName("Mock_Ledger_Manual_Tally_Sheet");
+                                    setOpenPrintChoiceDialog(false);
+                                    setOpenPreviewDialog(true);
+                                }}
+                                className="w-full rounded-xl mt-1 text-xs font-semibold cursor-pointer active:scale-95 transition-all text-white bg-primary hover:bg-primary/90"
+                            >
+                                Generate Manual Tally Sheet
+                            </Button>
+                        </div>
                     </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel className="cursor-pointer rounded-xl">Cancel</AlertDialogCancel>
