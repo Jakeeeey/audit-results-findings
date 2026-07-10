@@ -1,4 +1,4 @@
-﻿/* eslint-disable */
+/* eslint-disable */
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -22,10 +22,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { fetchProvider } from "../providers/fetchProvider";
 import { ConsolidatorRecord, ConsolidatorDetailRecord, ConsolidatorDispatchRecord } from "../types";
 import { toast } from "sonner";
-import { FileText, Package, Truck, ChevronDown, ChevronRight, FileOutput, Printer } from "lucide-react";
+import { FileText, Package, Truck, ChevronDown, ChevronRight, FileOutput, Printer, Search } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TracingReportPreviewModal } from "../../traceability-compliance/components/TracingReportPreviewModal";
 import { generateCLDTOHtml } from "../utils/generateCLDTOHtml";
 
@@ -46,6 +47,7 @@ export function CLDTODetailModal({ isOpen, onClose, consolidatorId }: CLDTODetai
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [expandedDispatch, setExpandedDispatch] = useState<number | string | null>(null);
   const [expandedSO, setExpandedSO] = useState<number | string | null>(null);
+  const [productFilter, setProductFilter] = useState("");
 
   useEffect(() => {
     if (isOpen && consolidatorId) {
@@ -237,6 +239,17 @@ export function CLDTODetailModal({ isOpen, onClose, consolidatorId }: CLDTODetai
               </TabsContent>
 
               <TabsContent value="pdp" className="m-0 border border-border rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-border bg-background/50">
+                  <div className="relative max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 shrink-0" />
+                    <Input
+                      placeholder="Filter by Product Name or Code..."
+                      value={productFilter}
+                      onChange={(e) => setProductFilter(e.target.value)}
+                      className="pl-10 bg-background"
+                    />
+                  </div>
+                </div>
                 <Table>
                   <TableHeader className="bg-muted/50 border-b border-border">
                     <TableRow className="hover:bg-transparent">
@@ -245,48 +258,96 @@ export function CLDTODetailModal({ isOpen, onClose, consolidatorId }: CLDTODetai
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {dispatches.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={2} className="text-center py-8 text-muted-foreground text-xs font-bold uppercase tracking-widest opacity-50">
-                          No PDP found
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      dispatches.map(dispatch => (
+                    {(() => {
+                      const filteredDispatches = dispatches.filter(dispatch => {
+                        if (!productFilter) return true;
+                        const filterLower = productFilter.toLowerCase();
+                        
+                        if (dispatch.dispatch_no?.toLowerCase().includes(filterLower)) return true;
+                        
+                        return dispatch.dispatch_plan_details?.some(so => {
+                          if (so.order_no?.toLowerCase().includes(filterLower)) return true;
+                          return so.details?.some(d => 
+                            d.product_name?.toLowerCase().includes(filterLower) || 
+                            d.product_code?.toLowerCase().includes(filterLower)
+                          );
+                        });
+                      });
+
+                      if (filteredDispatches.length === 0) {
+                        return (
+                          <TableRow>
+                            <TableCell colSpan={2} className="text-center py-8 text-muted-foreground text-xs font-bold uppercase tracking-widest opacity-50">
+                              No PDP found
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
+                      return filteredDispatches.map(dispatch => {
+                        const isFilterActive = productFilter.trim().length > 0;
+                        let dispatchHasMatch = false;
+                        if (isFilterActive) {
+                          const filterLower = productFilter.toLowerCase();
+                          dispatchHasMatch = dispatch.dispatch_plan_details?.some(so => 
+                            so.order_no?.toLowerCase().includes(filterLower) ||
+                            so.details?.some(d => 
+                              d.product_name?.toLowerCase().includes(filterLower) || 
+                              d.product_code?.toLowerCase().includes(filterLower)
+                            )
+                          ) || false;
+                        }
+
+                        const isDispatchExpanded = expandedDispatch === dispatch.id || (isFilterActive && dispatchHasMatch);
+
+                        return (
                         <React.Fragment key={dispatch.id}>
                           <TableRow 
                             className="hover:bg-muted/30 transition-colors cursor-pointer"
                             onClick={() => setExpandedDispatch(expandedDispatch === dispatch.id ? null : dispatch.id)}
                           >
                             <TableCell className="font-black text-sm uppercase text-primary tracking-tighter flex items-center gap-2">
-                              {expandedDispatch === dispatch.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                              {isDispatchExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                               {dispatch.dispatch_no}
                             </TableCell>
                             <TableCell className="text-xs font-bold text-muted-foreground uppercase">
                               {dispatch.created_at ? format(new Date(dispatch.created_at), "MMM dd, yyyy HH:mm") : "---"}
                             </TableCell>
                           </TableRow>
-                          {expandedDispatch === dispatch.id && dispatch.dispatch_plan_details && (
+                          {isDispatchExpanded && dispatch.dispatch_plan_details && (
                             <TableRow className="bg-muted/10">
                               <TableCell colSpan={2} className="p-0 border-b border-border">
                                 <div className="pl-12 pr-6 py-4">
                                   <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Linked Sales Orders</div>
                                   <div className="flex flex-col gap-2">
                                     {dispatch.dispatch_plan_details.length > 0 ? (
-                                      dispatch.dispatch_plan_details.map((so, idx) => (
+                                      dispatch.dispatch_plan_details.map((so, idx) => {
+                                        let soHasMatch = false;
+                                        if (isFilterActive) {
+                                          const filterLower = productFilter.toLowerCase();
+                                          soHasMatch = so.order_no?.toLowerCase().includes(filterLower) || 
+                                            (so.details?.some(d => 
+                                              d.product_name?.toLowerCase().includes(filterLower) || 
+                                              d.product_code?.toLowerCase().includes(filterLower)
+                                            ) ?? false);
+                                        }
+
+                                        const isSOExpanded = expandedSO === so.sales_order_id || (isFilterActive && soHasMatch);
+
+                                        return (
                                         <div key={idx} className="flex flex-col border border-border rounded-lg bg-background overflow-hidden">
                                           <div 
                                             className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/30 transition-colors"
                                             onClick={() => setExpandedSO(expandedSO === so.sales_order_id ? null : so.sales_order_id)}
                                           >
                                             <div className="flex items-center gap-3">
-                                              {expandedSO === so.sales_order_id ? <ChevronDown className="w-4 h-4 text-primary" /> : <ChevronRight className="w-4 h-4 text-primary" />}
+                                              {isSOExpanded ? <ChevronDown className="w-4 h-4 text-primary" /> : <ChevronRight className="w-4 h-4 text-primary" />}
                                               <FileOutput className="w-4 h-4 text-primary/60" />
                                               <span className="font-bold text-sm text-foreground">{so.order_no}</span>
                                             </div>
                                             <Badge variant="secondary" className="text-[9px] uppercase tracking-widest">{so.status}</Badge>
                                           </div>
-                                            {expandedSO === so.sales_order_id && (
+                                            {isSOExpanded && (
                                               <div className="bg-muted/5 border-t border-border p-4 flex flex-col gap-4">
                                                 {so.invoices && so.invoices.length > 0 && (
                                                   <div className="flex flex-col gap-3">
@@ -334,27 +395,47 @@ export function CLDTODetailModal({ isOpen, onClose, consolidatorId }: CLDTODetai
                                                   </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
-                                                  {so.details.map((detail, dIdx) => (
-                                                    <TableRow key={dIdx} className="hover:bg-muted/30 border-b border-border/50">
-                                                      <TableCell className="py-2 pl-4">
-                                                        <div className="flex flex-col">
-                                                          <span className="font-bold text-xs uppercase">{detail.product_name}</span>
-                                                          <span className="text-[10px] text-muted-foreground font-mono">{detail.product_code}</span>
-                                                        </div>
-                                                      </TableCell>
-                                                      <TableCell className="text-right py-2 font-mono text-xs font-medium">{detail.ordered_quantity}</TableCell>
-                                                      <TableCell className="text-right py-2 font-mono text-xs font-bold text-amber-600">{detail.allocated_quantity}</TableCell>
-                                                      <TableCell className="text-right py-2 pr-4 font-mono text-xs font-bold text-emerald-600">{detail.served_quantity}</TableCell>
-                                                    </TableRow>
-                                                  ))}
+                                                  {(() => {
+                                                    const filteredDetails = productFilter.trim() === ""
+                                                      ? so.details
+                                                      : so.details.filter((d: any) => 
+                                                          d.product_name?.toLowerCase().includes(productFilter.toLowerCase()) ||
+                                                          d.product_code?.toLowerCase().includes(productFilter.toLowerCase())
+                                                        );
+
+                                                    if (filteredDetails.length === 0) {
+                                                      return (
+                                                        <TableRow>
+                                                          <TableCell colSpan={4} className="text-center py-4 text-xs text-muted-foreground">
+                                                            No products match the filter.
+                                                          </TableCell>
+                                                        </TableRow>
+                                                      );
+                                                    }
+
+                                                    return filteredDetails.map((detail: any, dIdx: number) => (
+                                                      <TableRow key={dIdx} className="hover:bg-muted/30 border-b border-border/50">
+                                                        <TableCell className="py-2 pl-4">
+                                                          <div className="flex flex-col">
+                                                            <span className="font-bold text-xs uppercase">{detail.product_name}</span>
+                                                            <span className="text-[10px] text-muted-foreground font-mono">{detail.product_code}</span>
+                                                          </div>
+                                                        </TableCell>
+                                                        <TableCell className="text-right py-2 font-mono text-xs font-medium">{detail.ordered_quantity}</TableCell>
+                                                        <TableCell className="text-right py-2 font-mono text-xs font-bold text-amber-600">{detail.allocated_quantity}</TableCell>
+                                                        <TableCell className="text-right py-2 pr-4 font-mono text-xs font-bold text-emerald-600">{detail.served_quantity}</TableCell>
+                                                      </TableRow>
+                                                    ));
+                                                  })()}
                                                   </TableBody>
-                                                </Table>
-                                              </div>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))
+                                                  </Table>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })
                                     ) : (
                                       <div className="text-xs text-muted-foreground italic">No Sales Orders found for this Dispatch.</div>
                                     )}
@@ -364,8 +445,9 @@ export function CLDTODetailModal({ isOpen, onClose, consolidatorId }: CLDTODetai
                             </TableRow>
                           )}
                         </React.Fragment>
-                      ))
-                    )}
+                        );
+                      })
+                    })()}
                   </TableBody>
                 </Table>
               </TabsContent>
