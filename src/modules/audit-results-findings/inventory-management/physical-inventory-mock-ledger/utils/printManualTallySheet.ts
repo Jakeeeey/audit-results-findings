@@ -47,15 +47,7 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
     const categoryPct = Math.max(6, maxCategoryChars * 0.75);
 
     // Calculate max length of Unit (in characters)
-    let maxUnitChars = 4; // length of "Unit"
-    for (const group of groupedRows) {
-        for (const child of group.rows) {
-            const unitText = child.unit_name || child.unit_shortcut || "PCS";
-            if (unitText.length > maxUnitChars) {
-                maxUnitChars = unitText.length;
-            }
-        }
-    }
+    const maxUnitChars = Math.max(4, "Pieces".length); // "Pieces" is 6 characters
     const unitPct = Math.max(5, maxUnitChars * 0.75);
 
     // Remaining layout percentages (Phys Qty and TOTAL removed, 12 tally columns)
@@ -77,63 +69,43 @@ export function printManualTallySheet(args: PrintManualTallySheetArgs): void {
     });
 
     for (const group of sortedGroups) {
-        const sortedChildren = [...group.rows]
-            .filter((child) => {
-                const uomName = (child.unit_name || child.unit_shortcut || "").trim().toLowerCase();
-                return uomName !== "pack" && uomName !== "packs";
-            })
-            .sort((a, b) => {
-                return b.unit_count - a.unit_count; // Descending: Boxes → Pieces
-            });
+        const categoryCell = escapeHtml(group.category_name || "");
+        const descCell = escapeHtml(group.base_product_name || "");
 
-        if (sortedChildren.length === 0) continue;
-
-        for (let idx = 0; idx < sortedChildren.length; idx++) {
-            const child = sortedChildren[idx];
-            const categoryCell = escapeHtml(child.category_name || group.category_name || "");
-            const descCell = escapeHtml(child.product_name || group.base_product_name);
-            const unitCell = escapeHtml(child.unit_name ?? child.unit_shortcut ?? "PCS");
-
-            if (idx === 0) {
-                tableRowsHtml += `
-                    <tr>
-                        <td class="category-cell" rowspan="${sortedChildren.length}">${categoryCell}</td>
-                        <td class="desc-cell" rowspan="${sortedChildren.length}">${descCell}</td>
-                        <td class="unit-cell">${unitCell}</td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                    </tr>
-                `;
-            } else {
-                tableRowsHtml += `
-                    <tr>
-                        <td class="unit-cell">${unitCell}</td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                        <td class="tally-cell"></td>
-                    </tr>
-                `;
-            }
-        }
+        tableRowsHtml += `
+            <tr>
+                <td class="category-cell" rowspan="2">${categoryCell}</td>
+                <td class="desc-cell" rowspan="2">${descCell}</td>
+                <td class="unit-cell">Box</td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+            </tr>
+            <tr>
+                <td class="unit-cell">Pieces</td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+                <td class="tally-cell"></td>
+            </tr>
+        `;
     }
 
     const html = `

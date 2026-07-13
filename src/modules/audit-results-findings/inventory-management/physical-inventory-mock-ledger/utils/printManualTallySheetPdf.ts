@@ -127,42 +127,27 @@ export async function generateManualTallySheetPdf(args: GenerateManualTallySheet
     });
 
     for (const group of sortedGroups) {
-        const sortedChildren = [...group.rows]
-            .filter((child) => {
-                const uomName = (child.unit_name || child.unit_shortcut || "").trim().toLowerCase();
-                return uomName !== "pack" && uomName !== "packs";
-            })
-            .sort((a, b) => b.unit_count - a.unit_count); // Descending: Boxes → Pieces
-
-        if (sortedChildren.length === 0) continue;
-
         firstRowIndices.add(rowIndex);
 
-        for (let idx = 0; idx < sortedChildren.length; idx++) {
-            const child = sortedChildren[idx];
-            const categoryCell = child.category_name || group.category_name || "";
-            const descCell = child.product_name || group.base_product_name;
-            const unitCell = child.unit_name || child.unit_shortcut || "PCS";
+        const categoryCell = group.category_name || "";
+        const descCell = group.base_product_name || "";
 
-            if (idx === 0) {
-                tableBody.push([
-                    { content: categoryCell, rowSpan: sortedChildren.length, styles: { valign: "middle" as const } },
-                    { content: descCell, rowSpan: sortedChildren.length, styles: { valign: "middle" as const } },
-                    unitCell,
-                    "", "", "", "", "", "", "", "", "", "", "", "" // 12 tally columns
-                ]);
-            } else {
-                tableBody.push([
-                    unitCell,
-                    "", "", "", "", "", "", "", "", "", "", "" // 12 tally columns
-                ]);
-            }
+        // Row 1: Box
+        tableBody.push([
+            { content: categoryCell, rowSpan: 2, styles: { valign: "middle" as const } },
+            { content: descCell, rowSpan: 2, styles: { valign: "middle" as const } },
+            "Box",
+            "", "", "", "", "", "", "", "", "", "", "", "" // 12 tally columns
+        ]);
+        rowIndex++;
 
-            if (idx === sortedChildren.length - 1) {
-                lastRowIndices.add(rowIndex);
-            }
-            rowIndex++;
-        }
+        // Row 2: Pieces
+        tableBody.push([
+            "Pieces",
+            "", "", "", "", "", "", "", "", "", "", "" // 12 tally columns
+        ]);
+        lastRowIndices.add(rowIndex);
+        rowIndex++;
     }
 
     // Headers (Phys Qty and TOTAL removed, Beginning label removed, 12 columns)
@@ -188,15 +173,9 @@ export async function generateManualTallySheetPdf(args: GenerateManualTallySheet
 
     // 2. Calculate Unit max width (with 2mm padding on each side = 4mm total)
     let maxUnitWidth = doc.getTextWidth("Unit");
-    for (const group of sortedGroups) {
-        for (const child of group.rows) {
-            const unitText = child.unit_name || child.unit_shortcut || "PCS";
-            const w = doc.getTextWidth(unitText);
-            if (w > maxUnitWidth) {
-                maxUnitWidth = w;
-            }
-        }
-    }
+    const wBox = doc.getTextWidth("Box");
+    const wPieces = doc.getTextWidth("Pieces");
+    maxUnitWidth = Math.max(maxUnitWidth, wBox, wPieces);
     const unitColWidth = Math.max(12, maxUnitWidth + 4);
 
     // 3. Allocate remaining width to Description (Tally columns expanded to 17mm each, budget is Government Legal contentWidth, 12 tally columns)
@@ -296,10 +275,10 @@ export async function generateManualTallySheetPdf(args: GenerateManualTallySheet
         }
     });
 
-    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15;
+    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
     // 4. Footer sign-offs (Legal height is 215.9mm, so check overflow > 170mm)
-    if (finalY > 170) {
+    if (finalY > 175) {
         doc.addPage();
     }
 
@@ -307,9 +286,9 @@ export async function generateManualTallySheetPdf(args: GenerateManualTallySheet
     doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0);
 
-    const labelY = (finalY > 170 ? 20 : finalY) + 10;
-    const footerYLine = labelY + 12;
-    const footerYText = footerYLine + 5;
+    const labelY = (finalY > 175 ? 20 : finalY) + 4;
+    const footerYLine = labelY + 10;
+    const footerYText = footerYLine + 4;
 
     // Divide content width into 3 equal footer sections
     const sectionWidth = contentWidth / 3;
