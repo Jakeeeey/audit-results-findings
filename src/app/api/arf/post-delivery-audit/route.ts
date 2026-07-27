@@ -251,8 +251,11 @@ export async function GET(req: NextRequest) {
       // 1. Fetch Post Dispatch Plans (Posted)
       const planFilters: Record<string, unknown> = { status: { _eq: "Posted" } };
       if (dateFrom && dateTo) {
-        // Use date_encoded for filtering to ensure we find "Posted" plans which might have null TOD
-        planFilters.date_encoded = { _between: [dateFrom, dateTo] };
+        // Filter by either Time of Dispatch or Time of Arrival
+        planFilters._or = [
+          { time_of_dispatch: { _between: [dateFrom, dateTo] } },
+          { time_of_arrival: { _between: [dateFrom, dateTo] } }
+        ];
       }
       if (driverId && driverId !== "ALL") {
         planFilters.driver_id = { _eq: driverId };
