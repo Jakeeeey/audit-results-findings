@@ -1,20 +1,14 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { GroupedPhysicalInventoryRow, MockLedgerHeaderRow } from "../types";
-import { PdfEngine } from "@/components/pdf-layout-design/PdfEngine";
 
 export type GenerateManualTallySheetPdfArgs = {
     header: MockLedgerHeaderRow;
     groupedRows: GroupedPhysicalInventoryRow[];
     branchName: string;
     supplierName: string;
+    warehousemanName?: string;
 };
-
-function fmtNumber(value: number): string {
-    return value.toLocaleString("en-PH", {
-        maximumFractionDigits: 0,
-    });
-}
 
 function formatDateString(value: string | null | undefined): string {
     if (!value) return "";
@@ -32,244 +26,303 @@ function formatDateString(value: string | null | undefined): string {
 }
 
 export async function generateManualTallySheetPdf(args: GenerateManualTallySheetPdfArgs): Promise<jsPDF> {
-    const { header, groupedRows, branchName, supplierName } = args;
+    const { header, groupedRows, branchName, supplierName, warehousemanName } = args;
 
-    // Fetch company data
-    let companyData = null;
-    try {
-        const cached = localStorage.getItem("pdf_company_data");
-        if (cached) {
-            companyData = JSON.parse(cached);
-        } else {
-            const compRes = await fetch("/api/pdf/company");
-            if (compRes.ok) {
-                const result = await compRes.json();
-                companyData = result.data?.[0] || result.data || null;
-                if (companyData) {
-                    localStorage.setItem("pdf_company_data", JSON.stringify(companyData));
-                }
-            }
-        }
-    } catch (e) {
-        console.error("Error loading company data:", e);
-    }
+    // Initialize landscape Government Legal size jsPDF directly (8.5in x 13in = 215.9mm x 330.2mm)
+    const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: [215.9, 330.2],
+    });
 
-    const doc = await PdfEngine.generateWithFrame("Legal - Landscape", companyData, (doc, startY) => {
-        // Subtitle "MOCK LEDGER - MANUAL TALLY SHEET"
+    const pageMargin = 10; // mm
+    const pageWidth = doc.internal.pageSize.getWidth(); // 330.2 mm
+    const contentWidth = pageWidth - pageMargin * 2;    // 310.2 mm
+
+    // Subtitle position
+    const subtitleY = 12;
+
+    // Underline subtitle
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
+    const subWidth = doc.getTextWidth("MOCK LEDGER - MANUAL TALLY SHEET");
+
+    // Dynamic Metadata Row Drawing with Mathematically Even Spacing
+    const drawHeaderFields = (pageNumber: number, yPos: number) => {
+        // 1. Title
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
-        doc.text("MOCK LEDGER - MANUAL TALLY SHEET", 177.8, startY + 5, { align: "center" });
+        doc.text("MOCK LEDGER - MANUAL TALLY SHEET", pageWidth / 2, subtitleY, { align: "center" });
 
-        // Underline subtitle
         doc.setDrawColor(0, 0, 0);
         doc.setLineWidth(0.2);
-        const subWidth = doc.getTextWidth("MOCK LEDGER - MANUAL TALLY SHEET");
-        doc.line(177.8 - subWidth / 2, startY + 6, 177.8 + subWidth / 2, startY + 6);
+        doc.line(pageWidth / 2 - subWidth / 2, subtitleY + 1, pageWidth / 2 + subWidth / 2, subtitleY + 1);
 
-        // 2. Metadata Table
-        const metaBody = [
-            [
-                { content: "Control No:", styles: { fontStyle: "bold" as const } },
-                header.ph_no || "",
-                { content: "Branch:", styles: { fontStyle: "bold" as const } },
-                branchName,
-            ],
-            [
-                { content: "Supplier:", styles: { fontStyle: "bold" as const } },
-                supplierName,
-                { content: "Cut-off Date:", styles: { fontStyle: "bold" as const } },
-                formatDateString(header.cutOff_date),
-            ]
+        // 2. Fields list
+        const fields = [
+            { label: "Control No: ", value: header.ph_no || "" },
+            { label: "Branch: ", value: branchName },
+            { label: "Supplier: ", value: supplierName },
+            { label: "Warehouseman: ", value: warehousemanName || "" },
+            { label: "Cut-off Date: ", value: formatDateString(header.cutOff_date) },
+            { label: "Page: ", value: String(pageNumber) }
         ];
 
-        autoTable(doc, {
-            startY: startY + 10,
-            margin: { left: 20, right: 20 },
-            theme: "plain",
-            styles: { fontSize: 9.5, cellPadding: 2 },
-            columnStyles: {
-                0: { cellWidth: 25 },
-                1: { cellWidth: 120 },
-                2: { cellWidth: 25 },
-                3: { cellWidth: 145 }
-            },
-            body: metaBody,
+        // Measure all fields
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        const measured = fields.map(f => {
+            doc.setFont("helvetica", "bold");
+            const labelW = doc.getTextWidth(f.label);
+            doc.setFont("helvetica", "normal");
+            const valueW = doc.getTextWidth(f.value);
+            return {
+                label: f.label,
+                value: f.value,
+                labelW,
+                valueW,
+                totalW: labelW + Math.max(12, valueW) // Min line width for values
+            };
         });
 
-        const tableStartY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
+        const totalFieldsWidth = measured.reduce((sum, f) => sum + f.totalW, 0);
+        const remainingWidth = contentWidth - totalFieldsWidth;
+        const gap = remainingWidth / (fields.length - 1); // 5 equal gaps between 6 fields
 
-        const tableBody: string[][] = [];
-        const lastRowIndices = new Set<number>();
-        const firstRowIndices = new Set<number>();
-        let rowIndex = 0;
+        let currentX = pageMargin;
+        measured.forEach((f, idx) => {
+            // Draw label (Bold)
+            doc.setFont("helvetica", "bold");
+            doc.text(f.label, currentX, yPos);
 
-        for (const group of groupedRows) {
-            const sortedChildren = [...group.rows].sort((a, b) => a.unit_count - b.unit_count);
+            // Draw value (Normal)
+            doc.setFont("helvetica", "normal");
+            doc.text(f.value, currentX + f.labelW, yPos);
 
-            firstRowIndices.add(rowIndex);
-
-            for (let idx = 0; idx < sortedChildren.length; idx++) {
-                const child = sortedChildren[idx];
-                const codeCell = child.product_code ?? "";
-                const descCell = child.product_name || group.base_product_name;
-                const unitCell = child.unit_name || child.unit_shortcut || "PCS";
-                const systemQtyVal = fmtNumber(child.system_count);
-
-                tableBody.push([
-                    codeCell,
-                    descCell,
-                    unitCell,
-                    systemQtyVal,
-                    "", "", "", "", "", "", "", "", "", "", // 10 tally columns
-                    "" // TOTAL column
-                ]);
-
-                if (idx === sortedChildren.length - 1) {
-                    lastRowIndices.add(rowIndex);
-                }
-                rowIndex++;
-            }
-        }
-
-        // Headers
-        const headers = [
-            "Code", "Description", "Unit", "Phys Qty",
-            "", "", "", "", "", "", "", "", "", "", // 10 empty columns
-            "TOTAL"
-        ];
-
-        autoTable(doc, {
-            startY: tableStartY,
-            margin: { left: 20, right: 20 },
-            theme: "grid",
-            styles: {
-                fontSize: 7.5,
-                cellPadding: [1, 2],
-                lineColor: [102, 102, 102],
-                lineWidth: 0.15,
-            },
-            headStyles: {
-                fillColor: [255, 255, 255],
-                textColor: [0, 0, 0],
-                fontStyle: "bold",
-                halign: "center",
-                valign: "middle",
-                minCellHeight: 10
-            },
-            bodyStyles: {
-                minCellHeight: 5.5,
-                valign: "middle"
-            },
-            rowPageBreak: "avoid",
-            head: [headers],
-            body: tableBody,
-            columnStyles: {
-                0: { cellWidth: 40 }, // Code
-                1: { cellWidth: 100 }, // Description
-                2: { cellWidth: 20, halign: "center" }, // Unit
-                3: { cellWidth: 20, halign: "right", fontStyle: "bold", fillColor: [252, 252, 252] }, // Phys Qty
-                4: { cellWidth: 11 },
-                5: { cellWidth: 11 },
-                6: { cellWidth: 11 },
-                7: { cellWidth: 11 },
-                8: { cellWidth: 11 },
-                9: { cellWidth: 11 },
-                10: { cellWidth: 11 },
-                11: { cellWidth: 11 },
-                12: { cellWidth: 11 },
-                13: { cellWidth: 11 },
-                14: { cellWidth: 25, fillColor: [250, 250, 250] } // TOTAL
-            },
-            didDrawCell: (data) => {
-                // Draw diagonal slashes on the header cells of the 10 tally columns
-                if (data.row.section === "head" && data.column.index >= 4 && data.column.index <= 13) {
-                    const cellX = data.cell.x;
-                    const cellY = data.cell.y;
-                    const cellW = data.cell.width;
-                    const cellH = data.cell.height;
-
-                    doc.setDrawColor(102, 102, 102);
-                    doc.setLineWidth(0.15);
-                    doc.line(cellX, cellY + cellH, cellX + cellW, cellY);
-                }
-
-                // Draw thick, dark bottom border for the table header row
-                if (data.row.section === "head") {
-                    const cellX = data.cell.x;
-                    const cellY = data.cell.y;
-                    const cellW = data.cell.width;
-                    const cellH = data.cell.height;
-
-                    doc.setDrawColor(50, 50, 50);
-                    doc.setLineWidth(0.5);
-                    doc.line(cellX, cellY + cellH, cellX + cellW, cellY + cellH);
-                }
-
-                // Draw thick, dark top border for the first row of each product family
-                if (data.row.section === "body" && firstRowIndices.has(data.row.index)) {
-                    const cellX = data.cell.x;
-                    const cellY = data.cell.y;
-                    const cellW = data.cell.width;
-
-                    doc.setDrawColor(50, 50, 50);
-                    doc.setLineWidth(0.5);
-                    doc.line(cellX, cellY, cellX + cellW, cellY);
-                }
-
-                // Draw thick, dark bottom border for the last row of each product family
-                if (data.row.section === "body" && lastRowIndices.has(data.row.index)) {
-                    const cellX = data.cell.x;
-                    const cellY = data.cell.y;
-                    const cellW = data.cell.width;
-                    const cellH = data.cell.height;
-
-                    doc.setDrawColor(50, 50, 50);
-                    doc.setLineWidth(0.5);
-                    doc.line(cellX, cellY + cellH, cellX + cellW, cellY + cellH);
-                }
-            }
+            currentX += f.totalW + (idx < fields.length - 1 ? gap : 0);
         });
+    };
 
-        const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15;
+    // Draw header on Page 1
+    drawHeaderFields(1, subtitleY + 7);
 
-        // 4. Footer sign-offs (Legal height is 215.9mm, so check overflow > 170mm)
-        if (finalY > 170) {
-            doc.addPage();
-        }
+    const tableStartY = subtitleY + 11;
 
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 0, 0);
+    type AutoTableCell = string | { content: string; rowSpan?: number; styles?: { valign: "middle" | "top" | "bottom" } };
+    const tableBody: AutoTableCell[][] = [];
+    const lastRowIndices = new Set<number>();
+    const firstRowIndices = new Set<number>();
+    let rowIndex = 0;
 
-        const labelY = (finalY > 170 ? 20 : finalY) + 10;
-        const footerYLine = labelY + 12;
-        const footerYText = footerYLine + 5;
+    const sortedGroups = [...groupedRows].sort((a, b) => {
+        const catA = a.category_name ?? "";
+        const catB = b.category_name ?? "";
+        const catCompare = catA.localeCompare(catB);
+        if (catCompare !== 0) return catCompare;
 
-        // Counted By
-        doc.text("Counted By:", 20, labelY);
-        doc.line(20, footerYLine, 100, footerYLine);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text("Signature over Printed Name", 20, footerYText);
-
-        // Verified By
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.text("Verified By:", 135, labelY);
-        doc.line(135, footerYLine, 215, footerYLine);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text("Signature over Printed Name", 135, footerYText);
-
-        // Posted By
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.text("Posted By:", 250, labelY);
-        doc.line(250, footerYLine, 330, footerYLine);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text("Signature over Printed Name", 250, footerYText);
+        const nameA = a.base_product_name ?? "";
+        const nameB = b.base_product_name ?? "";
+        return nameA.localeCompare(nameB);
     });
+
+    for (const group of sortedGroups) {
+        firstRowIndices.add(rowIndex);
+
+        const categoryCell = group.category_name || "";
+        const descCell = group.base_product_name || "";
+
+        // Row 1: Box
+        tableBody.push([
+            { content: categoryCell, rowSpan: 2, styles: { valign: "middle" as const } },
+            { content: descCell, rowSpan: 2, styles: { valign: "middle" as const } },
+            "Box",
+            "", "", "", "", "", "", "", "", "", "", "", "" // 12 tally columns
+        ]);
+        rowIndex++;
+
+        // Row 2: Pieces
+        tableBody.push([
+            "Pieces",
+            "", "", "", "", "", "", "", "", "", "", "" // 12 tally columns
+        ]);
+        lastRowIndices.add(rowIndex);
+        rowIndex++;
+    }
+
+    // Headers (Phys Qty and TOTAL removed, Beginning label removed, 12 columns)
+    const headers = [
+        "Category", "Description", "Unit",
+        "", "", "", "", "", "", "", "", "", "", "", "" // 12 tally columns
+    ];
+
+    // Set font style/size for measurement
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+
+    // 1. Calculate Category max width (with 2mm padding on each side = 4mm total)
+    let maxCategoryWidth = doc.getTextWidth("Category");
+    for (const group of sortedGroups) {
+        const catText = group.category_name ?? "";
+        const w = doc.getTextWidth(catText);
+        if (w > maxCategoryWidth) {
+            maxCategoryWidth = w;
+        }
+    }
+    const categoryColWidth = Math.max(15, maxCategoryWidth + 4);
+
+    // 2. Calculate Unit max width (with 2mm padding on each side = 4mm total)
+    let maxUnitWidth = doc.getTextWidth("Unit");
+    const wBox = doc.getTextWidth("Box");
+    const wPieces = doc.getTextWidth("Pieces");
+    maxUnitWidth = Math.max(maxUnitWidth, wBox, wPieces);
+    const unitColWidth = Math.max(12, maxUnitWidth + 4);
+
+    // 3. Allocate remaining width to Description (Tally columns expanded to 17mm each, budget is Government Legal contentWidth, 12 tally columns)
+    const totalBudget = contentWidth;
+    const tallyColSingleWidth = 17;
+    const tallyColsWidth = tallyColSingleWidth * 12;
+
+    const descriptionColWidth = Math.max(
+        50,
+        totalBudget - categoryColWidth - unitColWidth - tallyColsWidth
+    );
+
+    autoTable(doc, {
+        startY: tableStartY,
+        margin: { top: 25, left: 10, right: 10 },
+        theme: "grid",
+        styles: {
+            fontSize: 7.5,
+            cellPadding: [0.5, 2],
+            lineColor: [102, 102, 102],
+            lineWidth: 0.15,
+        },
+        headStyles: {
+            fillColor: [255, 255, 255],
+            textColor: [0, 0, 0],
+            fontStyle: "bold",
+            halign: "center",
+            valign: "middle",
+            minCellHeight: 17 // Increased header height
+        },
+        bodyStyles: {
+            minCellHeight: 2.5,
+            valign: "middle"
+        },
+        rowPageBreak: "avoid",
+        head: [headers],
+        body: tableBody,
+        didDrawPage: (data) => {
+            if (data.pageNumber > 1) {
+                drawHeaderFields(data.pageNumber, subtitleY + 7);
+            }
+        },
+        columnStyles: {
+            0: { cellWidth: categoryColWidth }, // Category (Dynamic)
+            1: { cellWidth: descriptionColWidth }, // Description (Dynamic remaining)
+            2: { cellWidth: unitColWidth, halign: "left" }, // Unit (Dynamic)
+            3: { cellWidth: tallyColSingleWidth },
+            4: { cellWidth: tallyColSingleWidth },
+            5: { cellWidth: tallyColSingleWidth },
+            6: { cellWidth: tallyColSingleWidth },
+            7: { cellWidth: tallyColSingleWidth },
+            8: { cellWidth: tallyColSingleWidth },
+            9: { cellWidth: tallyColSingleWidth },
+            10: { cellWidth: tallyColSingleWidth },
+            11: { cellWidth: tallyColSingleWidth },
+            12: { cellWidth: tallyColSingleWidth },
+            13: { cellWidth: tallyColSingleWidth },
+            14: { cellWidth: tallyColSingleWidth }
+        },
+        didDrawCell: (data) => {
+            // Diagonal lines removed from tally headers as requested
+
+            // Draw thick, dark bottom border for the table header row
+            if (data.row.section === "head") {
+                const cellX = data.cell.x;
+                const cellY = data.cell.y;
+                const cellW = data.cell.width;
+                const cellH = data.cell.height;
+
+                doc.setDrawColor(50, 50, 50);
+                doc.setLineWidth(0.5);
+                doc.line(cellX, cellY + cellH, cellX + cellW, cellY + cellH);
+            }
+
+            // Draw thick, dark top border for the first row of each product family
+            if (data.row.section === "body" && firstRowIndices.has(data.row.index)) {
+                const cellX = data.cell.x;
+                const cellY = data.cell.y;
+                const cellW = data.cell.width;
+
+                doc.setDrawColor(50, 50, 50);
+                doc.setLineWidth(0.5);
+                doc.line(cellX, cellY, cellX + cellW, cellY);
+            }
+
+            // Draw thick, dark bottom border for the last row of each product family
+            if (data.row.section === "body" && lastRowIndices.has(data.row.index)) {
+                const cellX = data.cell.x;
+                const cellY = data.cell.y;
+                const cellW = data.cell.width;
+                const cellH = data.cell.height;
+
+                doc.setDrawColor(50, 50, 50);
+                doc.setLineWidth(0.5);
+                doc.line(cellX, cellY + cellH, cellX + cellW, cellY + cellH);
+            }
+        }
+    });
+
+    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+
+    // 4. Footer sign-offs (Legal height is 215.9mm, so check overflow > 170mm)
+    if (finalY > 175) {
+        doc.addPage();
+    }
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    const labelY = (finalY > 175 ? 20 : finalY) + 4;
+    const footerYLine = labelY + 10;
+    const footerYText = footerYLine + 4;
+
+    // Divide content width into 3 equal footer sections
+    const sectionWidth = contentWidth / 3;
+    const col1X = pageMargin;
+    const col1EndX = pageMargin + sectionWidth - 5;
+    const col2X = pageMargin + sectionWidth;
+    const col2EndX = pageMargin + sectionWidth * 2 - 5;
+    const col3X = pageMargin + sectionWidth * 2;
+    const col3EndX = pageMargin + contentWidth;
+
+    // Counted By
+    doc.text("Counted By:", col1X, labelY);
+    doc.line(col1X, footerYLine, col1EndX, footerYLine);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text("Signature over Printed Name", col1X, footerYText);
+
+    // Verified By
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("Verified By:", col2X, labelY);
+    doc.line(col2X, footerYLine, col2EndX, footerYLine);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text("Signature over Printed Name", col2X, footerYText);
+
+    // Posted By
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("Posted By:", col3X, labelY);
+    doc.line(col3X, footerYLine, col3EndX, footerYLine);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text("Signature over Printed Name", col3X, footerYText);
 
     return doc;
 }

@@ -16,6 +16,13 @@ export type BranchRow = {
     branch_name: string;
 };
 
+export type WarehousemanRow = {
+    user_id: number;
+    user_fname: string;
+    user_lname: string;
+    user_position: string;
+};
+
 export type SupplierRow = {
     id: number;
     supplier_name: string;
