@@ -229,6 +229,64 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
             currentY = y + 18;
           }
         });
+
+        // Add second page for Written Explanation
+        doc.addPage();
+        
+        let newStartY = 30;
+        try {
+          newStartY = (await PdfEngine.applyTemplate(doc, headerTemplate.name, company)) + 10;
+        } catch (e) {
+          console.error(e);
+        }
+
+        doc.setLineWidth(0.2);
+        doc.setFont("times", "bold");
+        doc.setFontSize(18);
+        const reasonTitle = "WRITTEN EXPLANATION";
+        const reasonTitleWidth = doc.getTextWidth(reasonTitle);
+        const reasonCenterX = (doc.internal.pageSize.getWidth() - reasonTitleWidth) / 2;
+        
+        doc.text(reasonTitle, reasonCenterX, newStartY);
+        doc.line(reasonCenterX, newStartY + 2, reasonCenterX + reasonTitleWidth, newStartY + 2);
+
+        doc.setFontSize(11);
+        doc.setFont("times", "normal");
+        
+        doc.text("Name:", 20, newStartY + 20);
+        doc.setFont("times", "bold");
+        doc.text(data.driverName, 35, newStartY + 20);
+        
+        doc.setFont("times", "normal");
+        doc.text("Date:", 140, newStartY + 20);
+        doc.line(150, newStartY + 20, 190, newStartY + 20);
+
+        doc.setFont("times", "normal");
+        doc.text("Position:", 20, newStartY + 30);
+        doc.setFont("times", "bold");
+        doc.text("Driver", 38, newStartY + 30);
+
+        doc.setFont("times", "normal");
+        doc.text("Dispatch No:", 140, newStartY + 30);
+        doc.setFont("times", "bold");
+        doc.text(data.dispatchNo, 165, newStartY + 30);
+
+        doc.setFont("times", "normal");
+        doc.text("Please provide your written explanation below:", 20, newStartY + 45);
+        
+        let lineY = newStartY + 60;
+        doc.setLineWidth(0.1);
+        for (let i = 0; i < 10; i++) {
+          doc.setDrawColor(150, 150, 150);
+          doc.line(20, lineY, 190, lineY);
+          lineY += 10;
+        }
+
+        doc.setLineWidth(0.2);
+        doc.setDrawColor(0, 0, 0);
+        doc.setFont("times", "bold");
+        doc.text("Signature over Printed Name:", 20, lineY + 20);
+        doc.line(75, lineY + 20, 150, lineY + 20);
       });
 
       const blob = doc.output("blob");
@@ -410,6 +468,64 @@ export const NTEPreviewModal: React.FC<NTEPreviewModalProps> = ({
             currentY = y + 18;
           }
         });
+
+        // Add second page for Written Explanation
+        doc.addPage();
+        
+        let newStartY = 30;
+        try {
+          newStartY = (await PdfEngine.applyTemplate(doc, headerTemplate.name, company)) + 10;
+        } catch (e) {
+          console.error(e);
+        }
+
+        doc.setLineWidth(0.2);
+        doc.setFont("times", "bold");
+        doc.setFontSize(18);
+        const reasonTitle = "WRITTEN EXPLANATION";
+        const reasonTitleWidth = doc.getTextWidth(reasonTitle);
+        const reasonCenterX = (doc.internal.pageSize.getWidth() - reasonTitleWidth) / 2;
+        
+        doc.text(reasonTitle, reasonCenterX, newStartY);
+        doc.line(reasonCenterX, newStartY + 2, reasonCenterX + reasonTitleWidth, newStartY + 2);
+
+        doc.setFontSize(11);
+        doc.setFont("times", "normal");
+        
+        doc.text("Name:", 20, newStartY + 20);
+        doc.setFont("times", "bold");
+        doc.text(data.driverName, 35, newStartY + 20);
+        
+        doc.setFont("times", "normal");
+        doc.text("Date:", 140, newStartY + 20);
+        doc.line(150, newStartY + 20, 190, newStartY + 20);
+
+        doc.setFont("times", "normal");
+        doc.text("Position:", 20, newStartY + 30);
+        doc.setFont("times", "bold");
+        doc.text("Driver", 38, newStartY + 30);
+
+        doc.setFont("times", "normal");
+        doc.text("Dispatch No:", 140, newStartY + 30);
+        doc.setFont("times", "bold");
+        doc.text(data.dispatchNo, 165, newStartY + 30);
+
+        doc.setFont("times", "normal");
+        doc.text("Please provide your written explanation below:", 20, newStartY + 45);
+        
+        let lineY = newStartY + 60;
+        doc.setLineWidth(0.1);
+        for (let i = 0; i < 10; i++) {
+          doc.setDrawColor(150, 150, 150);
+          doc.line(20, lineY, 190, lineY);
+          lineY += 10;
+        }
+
+        doc.setLineWidth(0.2);
+        doc.setDrawColor(0, 0, 0);
+        doc.setFont("times", "bold");
+        doc.text("Signature over Printed Name:", 20, lineY + 20);
+        doc.line(75, lineY + 20, 150, lineY + 20);
       });
 
       // 2. Upload to Directus & Save to DB
