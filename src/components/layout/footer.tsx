@@ -17,7 +17,7 @@ export function Footer() {
                     <div className="md:col-span-2 space-y-8">
                         <div className="flex items-center gap-4">
                             <div className="relative h-14 w-14 rounded-2xl bg-slate-900/[0.02] dark:bg-white/[0.02] border border-slate-900/5 dark:border-white/5 flex items-center justify-center overflow-hidden">
-                                <Image src={vosLogo} alt="VOS" fill className="object-contain p-3 dark:invert-0 invert" />
+                                <Image src={vosLogo} alt="VOS" fill sizes="56px" className="object-contain p-3 dark:invert-0 invert" />
                             </div>
                             <div className="text-3xl font-black tracking-tighter italic uppercase text-slate-900 dark:text-white">
                                 VOS-<span className="text-cyan-600 dark:text-cyan-500">WEB</span>
