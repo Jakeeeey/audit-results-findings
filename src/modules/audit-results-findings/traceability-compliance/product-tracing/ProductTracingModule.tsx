@@ -260,7 +260,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
         unit: validMovements.find(r => r.unitCount === (divisor || 1))?.unit || validMovements[0]?.familyUnit || "Box",
         isLiveRange
     };
-}, [movements, familyRunningTotal, filters.startDate, filters.endDate, filters.branch_id, filters.parent_id, filters.dateRangeMode]);
+}, [movements, filters.startDate, filters.endDate, filters.branch_id, filters.parent_id, filters.dateRangeMode]);
 
     const currentUnit = stats?.unit || "Units";
     const currentDivisor = stats?.divisor || 1;
@@ -304,7 +304,6 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
                             baseUnitDivisor={currentDivisor}
                             costPerUnit={families.find(f => f.parent_id === filters.parent_id)?.cost_per_unit || null}
                             beginningBaseBalance={stats.beginningBaseBalance || 0}
-                            familyRunningTotal={stats.isLiveRange ? familyRunningTotal : undefined}
                         />
                     )}
 

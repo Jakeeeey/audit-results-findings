@@ -21,10 +21,9 @@ interface Props {
     baseUnitDivisor: number;
     costPerUnit: number | null;
     beginningBaseBalance: number;
-    familyRunningTotal?: number;
 }
 
-export const PhysicalInventorySummary: React.FC<Props> = ({ movements, baseUnitName, baseUnitDivisor, costPerUnit, beginningBaseBalance, familyRunningTotal }) => {
+export const PhysicalInventorySummary: React.FC<Props> = ({ movements, baseUnitName, baseUnitDivisor, costPerUnit, beginningBaseBalance }) => {
     // 1. Calculate running balances chronologically so we can map Beginning and Ending Balance of a PH event
     const sortedData = [...movements].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
     
