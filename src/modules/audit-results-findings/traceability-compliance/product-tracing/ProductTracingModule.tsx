@@ -145,51 +145,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
             return true;
         });
 
-        // ── Global Family Balance Consolidation ──
-        // Instead of retroactively applying deltas in the UI (which breaks when date filters hide the present),
-        // we compute the missing family inventory delta from the FULL ledger and apply it to the absolute beginning balance.
-        let fullLedgerDelta = 0;
-        if (familyRunningTotal > 0 && movements.length > 0) {
-            let fullLedger = movements.filter(row => {
-                if (filters.branch_id && row.branchId !== filters.branch_id) return false;
-                if (filters.parent_id && row.productId !== filters.parent_id && row.parentId !== filters.parent_id) return false;
-                return true;
-            }).map(row => ({ ...row }));
-            
-            fullLedger.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
-            
-            // 1. Calculate delta across the FULL ledger, before any history is dropped for PH overrides
-            let unpatchedLedgerTotal = 0;
-            fullLedger.forEach(row => {
-                unpatchedLedgerTotal += getMovement(row) - (row.patchDeltaBase || 0);
-            });
-            
-            const delta = familyRunningTotal - unpatchedLedgerTotal;
-            if (Math.abs(delta) >= 1) fullLedgerDelta = delta;
 
-            const fullFirstPH = fullLedger.findIndex(row => row.docType === "Physical Inventory" || row.docNo?.toUpperCase().startsWith("PH"));
-            
-            if (fullFirstPH > -1) {
-                let dropCount = 0;
-                for (let i = 0; i < fullFirstPH; i++) dropCount += getMovement(fullLedger[i]);
-                fullLedger = fullLedger.slice(fullFirstPH);
-                let injected = false;
-                const fDoc = fullLedger[0].docNo;
-                fullLedger.forEach(row => {
-                    if (row.docNo === fDoc) {
-                        const phys = row.physical_count !== undefined ? row.physical_count : row.physicalCount;
-                        const sys = row.system_count !== undefined ? row.system_count : row.systemCount;
-                        const originalVariance = row.variance ?? ((phys || 0) - (sys || 0));
-                        if (!injected) {
-                            row.variance = originalVariance + (dropCount / (row.unitCount || 1));
-                            injected = true;
-                        } else {
-                            row.variance = originalVariance;
-                        }
-                    }
-                });
-            }
-        }
 
         if (firstPHIndex > -1) {
             // Calculate the total system count (in base units) that we are about to drop
@@ -265,8 +221,7 @@ export const ProductTracingModule = React.forwardRef<HTMLDivElement, React.HTMLA
             beginningBaseBalance += getMovement(row);
         });
 
-        // 3. Apply the global family inventory offset so the history perfectly aligns with reality
-        beginningBaseBalance += fullLedgerDelta;
+
 
         // Initialize breakdown for display
         validMovements.forEach(row => {

@@ -51,17 +51,7 @@ export const PhysicalInventorySummary: React.FC<Props> = ({ movements, baseUnitN
         }
     });
 
-    // ── Family Balance Consolidation ──────────────────────────────────────
-    // Apply the same correction delta as in the main ledger table
-    if (familyRunningTotal && familyRunningTotal > 0 && sortedData.length > 0) {
-        const movementEndBalance = currentBalance;
-        const familyDelta = familyRunningTotal - movementEndBalance;
 
-        if (Math.abs(familyDelta) >= 1) {
-            Object.keys(phBalancesBefore).forEach(key => phBalancesBefore[key] += familyDelta);
-            Object.keys(phBalancesAfter).forEach(key => phBalancesAfter[key] += familyDelta);
-        }
-    }
 
     const phMovements = sortedData.filter(m =>
         m.docNo.toUpperCase().startsWith("PH") ||
