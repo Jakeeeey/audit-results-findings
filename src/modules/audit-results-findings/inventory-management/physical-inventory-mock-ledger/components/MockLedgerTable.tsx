@@ -121,6 +121,41 @@ function SummaryChip({ label, value, numericValue }: SummaryChipProps) {
     );
 }
 
+function LocalPhysicalCountInput({
+    row,
+    canEdit,
+    onPhysicalCountChange,
+    onPhysicalCountBlur,
+}: {
+    row: GroupedPhysicalInventoryChildRow;
+    canEdit: boolean;
+    onPhysicalCountChange: (row: GroupedPhysicalInventoryChildRow, value: string) => void;
+    onPhysicalCountBlur: (row: GroupedPhysicalInventoryChildRow) => void;
+}) {
+    const [localValue, setLocalValue] = React.useState(String(row.physical_count));
+
+    React.useEffect(() => {
+        setLocalValue(String(row.physical_count));
+    }, [row.physical_count]);
+
+    return (
+        <Input
+            inputMode="decimal"
+            className="ml-auto w-28 border-border bg-background text-right font-semibold tabular-nums shadow-sm focus-visible:ring-2"
+            value={localValue}
+            onChange={(e) => setLocalValue(e.target.value)}
+            onBlur={() => {
+                if (localValue !== String(row.physical_count)) {
+                    onPhysicalCountChange(row, localValue);
+                }
+                onPhysicalCountBlur(row);
+            }}
+            disabled={!canEdit}
+            placeholder="0"
+        />
+    );
+}
+
 export function MockLedgerTable(props: Props) {
     const {
         rows,
@@ -224,16 +259,11 @@ export function MockLedgerTable(props: Props) {
                                                     </TableCell>
 
                                                     <TableCell className="text-right">
-                                                        <Input
-                                                            inputMode="decimal"
-                                                            className="ml-auto w-28 border-border bg-background text-right font-semibold tabular-nums shadow-sm focus-visible:ring-2"
-                                                            value={String(row.physical_count)}
-                                                            onChange={(e) =>
-                                                                onPhysicalCountChange(row, e.target.value)
-                                                            }
-                                                            onBlur={() => onPhysicalCountBlur(row)}
-                                                            disabled={!canEdit}
-                                                            placeholder="0"
+                                                        <LocalPhysicalCountInput
+                                                            row={row}
+                                                            canEdit={canEdit}
+                                                            onPhysicalCountChange={onPhysicalCountChange}
+                                                            onPhysicalCountBlur={onPhysicalCountBlur}
                                                         />
                                                     </TableCell>
 

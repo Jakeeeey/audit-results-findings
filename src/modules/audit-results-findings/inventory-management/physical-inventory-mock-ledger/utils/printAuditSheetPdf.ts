@@ -66,6 +66,25 @@ export function generateAuditSheetPdf(args: GenerateAuditSheetPdfArgs): jsPDF {
 
     let currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
+    let totalBoxesSystem = 0;
+    for (const row of groupedRows) {
+        const boxUnit = row.rows.find(c => {
+            const n = (c.unit_name || "").toUpperCase();
+            const s = (c.unit_shortcut || "").toUpperCase();
+            return ["BOX", "CASE"].some(k => n.includes(k) || s.includes(k));
+        });
+        if (boxUnit) {
+            totalBoxesSystem += (boxUnit.system_count || 0);
+        }
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Total Boxes: ${fmtNumber(totalBoxesSystem)}`, 14, currentY + 2);
+    
+    currentY += 8;
+
     // 3. Group products by brand_name
     const brandMap = new Map<string, GroupedPhysicalInventoryRow[]>();
     for (const row of groupedRows) {
