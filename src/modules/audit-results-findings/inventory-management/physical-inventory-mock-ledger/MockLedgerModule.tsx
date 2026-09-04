@@ -54,6 +54,7 @@ import {
     updateMockLedgerHeader,
     validateLoadProductsFilters,
     generateAuditSheetPdf,
+    generateAuditReportPdf,
     generateManualTallySheetPdf,
     type BulkPhysicalInventoryDetailUpdateItem,
 } from "./index";
@@ -74,11 +75,14 @@ import {
     Boxes,
     CheckCircle2,
     ClipboardList,
+    Eye,
+    EyeOff,
     Loader2,
     Plus,
     Printer,
     RefreshCcw,
     Search,
+    Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -214,6 +218,7 @@ export function MockLedgerModule(props: Props) {
     const [isSavingDetailBatch, setIsSavingDetailBatch] = React.useState(false);
     const [openAddProductDialog, setOpenAddProductDialog] = React.useState(false);
     const [isScrolled, setIsScrolled] = React.useState(false);
+    const [isToolbarExpanded, setIsToolbarExpanded] = React.useState(false);
 
     const [openCommitDialog, setOpenCommitDialog] = React.useState(false);
     const [isCommitting, setIsCommitting] = React.useState(false);
@@ -271,10 +276,26 @@ export function MockLedgerModule(props: Props) {
     );
     const dirtyDetailIdsRef = React.useRef<Set<number>>(new Set());
 
+    React.useEffect(() => {
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (dirtyDetailIdsRef.current.size > 0) {
+                event.preventDefault();
+                event.returnValue = "";
+            }
+        };
+
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, []);
+
     const [runningInventoryRows, setRunningInventoryRows] = React.useState<RunningInventoryRow[]>([]);
 
     const [header, setHeader] = React.useState<MockLedgerHeaderRow | null>(null);
     const [detailRows, setDetailRows] = React.useState<PhysicalInventoryDetailRow[]>([]);
+    const detailRowsRef = React.useRef(detailRows);
+    React.useEffect(() => {
+        detailRowsRef.current = detailRows;
+    }, [detailRows]);
     const [groupedRows, setGroupedRows] = React.useState<GroupedPhysicalInventoryRow[]>([]);
 
     const [filters, setFilters] = React.useState<MockLedgerFiltersType>({
@@ -569,7 +590,7 @@ export function MockLedgerModule(props: Props) {
 
         const dirtyIds = new Set(dirtyDetailIdsRef.current);
 
-        const updates: BulkPhysicalInventoryDetailUpdateItem[] = detailRows
+        const updates: BulkPhysicalInventoryDetailUpdateItem[] = detailRowsRef.current
             .filter((detail) => dirtyIds.has(detail.id))
             .map((detail) => ({
                 id: detail.id,
@@ -590,7 +611,7 @@ export function MockLedgerModule(props: Props) {
             const updatedRows = await updatePhysicalInventoryDetailsBulk(updates);
             const updatedMap = new Map(updatedRows.map((row) => [row.id, row]));
 
-            const nextDetails = detailRows.map((detail) => updatedMap.get(detail.id) ?? detail);
+            const nextDetails = detailRowsRef.current.map((detail) => updatedMap.get(detail.id) ?? detail);
 
             setDetailRows(nextDetails);
             for (const id of dirtyIds) {
@@ -604,11 +625,46 @@ export function MockLedgerModule(props: Props) {
             setHeader(nextHeader);
             onRecordChange?.(nextHeader);
 
-            rebuildGroupedRows({
-                nextDetails,
-                nextHeader,
-                nextFilters: filters,
-            });
+            // Surgically patch only the rows that were saved.
+            // Do NOT call rebuildGroupedRows here — that would overwrite any
+            // in-progress edits the user is currently making in other input fields.
+            setGroupedRows((prevGrouped) =>
+                prevGrouped.map((group) => {
+                    const nextRows = group.rows.map((child) => {
+                        const saved = updatedMap.get(child.detail_id ?? -1);
+                        if (!saved) return child;
+                        return {
+                            ...child,
+                            physical_count: saved.physical_count ?? 0,
+                            variance: saved.variance ?? 0,
+                            variance_base: (saved.variance ?? 0) * child.unit_count,
+                            difference_cost: saved.difference_cost ?? 0,
+                            amount: saved.amount ?? 0,
+                        };
+                    });
+
+                    const didChange = nextRows.some((r, i) => r !== group.rows[i]);
+                    if (!didChange) return group;
+
+                    return {
+                        ...group,
+                        rows: nextRows,
+                        total_physical_count_base: nextRows.reduce(
+                            (acc, child) => acc + child.physical_count * child.unit_count,
+                            0,
+                        ),
+                        total_variance_base: nextRows.reduce(
+                            (acc, child) => acc + child.variance_base,
+                            0,
+                        ),
+                        total_difference_cost: nextRows.reduce(
+                            (acc, child) => acc + child.difference_cost,
+                            0,
+                        ),
+                        total_amount: nextRows.reduce((acc, child) => acc + child.amount, 0),
+                    };
+                }),
+            );
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "Failed to save physical count batch.";
@@ -616,7 +672,7 @@ export function MockLedgerModule(props: Props) {
         } finally {
             setIsSavingDetailBatch(false);
         }
-    }, [detailRows, filters, header, onRecordChange, rebuildGroupedRows]);
+    }, [header, onRecordChange]);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -1296,7 +1352,18 @@ export function MockLedgerModule(props: Props) {
     );
 
     const handlePhysicalCountBlur = React.useCallback(async () => {
-        await flushDirtyDetails();
+        // [AUTO-SAVE COMMENTED OUT]
+        // await flushDirtyDetails();
+    }, []);
+
+    const handleSaveDraft = React.useCallback(async () => {
+        try {
+            await flushDirtyDetails();
+            toast.success("Draft saved successfully.");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to save draft.";
+            toast.error(message);
+        }
     }, [flushDirtyDetails]);
 
     const handleRefreshGroups = React.useCallback(async () => {
@@ -1376,6 +1443,9 @@ export function MockLedgerModule(props: Props) {
         try {
             setIsCommitting(true);
 
+            // Flush any unsaved drafts to the DB before committing
+            await flushDirtyDetails();
+
             const updatedHeader = await commitMockLedger(header.id);
 
             setHeader(updatedHeader);
@@ -1395,7 +1465,7 @@ export function MockLedgerModule(props: Props) {
         } finally {
             setIsCommitting(false);
         }
-    }, [canEdit, detailRows, filters, header?.id, onRecordChange, rebuildGroupedRows]);
+    }, [canEdit, detailRows, filters, header?.id, onRecordChange, rebuildGroupedRows, flushDirtyDetails]);
 
     const canCancelAction =
         Boolean(header?.id) &&
@@ -1439,21 +1509,30 @@ export function MockLedgerModule(props: Props) {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-
                         <Button
                             variant="outline"
                             className="cursor-pointer"
                             onClick={handleRefreshGroups}
                             disabled={
-                                !header.id ||
                                 isBootLoading ||
                                 isLoadingProducts ||
                                 isSavingDetailBatch ||
-                                isRebuildingGroups
+                                isCancelling ||
+                                isRebuildingGroups ||
+                                !hasLoadedDetails
                             }
                         >
                             <RefreshCcw className="mr-2 h-4 w-4" />
                             Refresh
+                        </Button>
+
+                        <Button
+                            className="cursor-pointer bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-800"
+                            onClick={handleSaveDraft}
+                            disabled={!canEdit || isBootLoading || isLoadingProducts || isSavingDetailBatch || isCancelling || isRebuildingGroups}
+                        >
+                            <Save className="mr-2 h-4 w-4" />
+                            Save Draft
                         </Button>
 
                         <Button
@@ -1974,6 +2053,36 @@ export function MockLedgerModule(props: Props) {
                             <span className="font-semibold text-sm">Mock Ledger Audit Sheet</span>
                             <span className="text-xs text-muted-foreground">Prints standard audit sheet with system counts and empty columns for manual input of physical counts.</span>
                         </button>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
+                                const doc = generateAuditReportPdf({
+                                    header,
+                                    groupedRows,
+                                    branchName: bName,
+                                    supplierName: sName,
+                                    priceTypeName: pName,
+                                });
+                                if (previewBlobUrl) {
+                                    URL.revokeObjectURL(previewBlobUrl);
+                                }
+                                const blob = doc.output("blob");
+                                const blobUrl = URL.createObjectURL(blob);
+                                setPreviewBlobUrl(blobUrl);
+                                setActiveDocInstance(doc);
+                                setActiveDocName("Mock_Ledger_Audit_Report");
+                                setOpenPrintChoiceDialog(false);
+                                setOpenPreviewDialog(true);
+                            }}
+                            className="flex flex-col items-start gap-1 rounded-xl border p-4 text-left hover:bg-muted/50 hover:border-primary/50 transition cursor-pointer active:scale-[0.98]"
+                        >
+                            <span className="font-semibold text-sm">Mock Ledger Audit Report</span>
+                            <span className="text-xs text-muted-foreground">Prints an audit report with the inputted physical counts displayed in the UOM columns.</span>
+                        </button>
                         
                         <div className="flex flex-col gap-3 rounded-xl border p-4 text-left transition bg-card">
                             <div className="flex flex-col gap-1">
@@ -2146,29 +2255,51 @@ export function MockLedgerModule(props: Props) {
             {groupedRows.length > 0 && (
                 <div
                     className={cn(
-                        "fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] w-full max-w-xl px-4 pointer-events-none transition-all duration-500 ease-in-out",
-                        isScrolled ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-20 scale-90"
+                        "fixed bottom-6 z-[9999] transition-all duration-500 ease-in-out pointer-events-none",
+                        isScrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20",
+                        isToolbarExpanded 
+                            ? "left-1/2 -translate-x-1/2 w-full max-w-xl px-4" 
+                            : "right-6"
                     )}
                 >
-                    <div className="flex items-center gap-3 bg-background/95 backdrop-blur-xl border border-primary/20 shadow-[0_-10px_50px_rgba(0,0,0,0.25)] rounded-full p-2 ring-1 ring-black/5 pointer-events-auto">
-                        <div className="relative flex-1 bg-muted/40 rounded-full border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-all">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/60" />
-                            <input
-                                value={productSearch}
-                                onChange={(e) => setProductSearch(e.target.value)}
-                                placeholder="Search loaded products..."
-                                className="h-12 w-full bg-transparent border-none focus:ring-0 text-sm pl-12 pr-4 placeholder:text-muted-foreground/50"
-                            />
+                    {isToolbarExpanded ? (
+                        <div className="flex items-center gap-3 bg-background/95 backdrop-blur-xl border border-primary/20 shadow-[0_-10px_50px_rgba(0,0,0,0.25)] rounded-full p-2 ring-1 ring-black/5 pointer-events-auto">
+                            <div className="relative flex-1 bg-muted/40 rounded-full border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-all">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/60" />
+                                <input
+                                    value={productSearch}
+                                    onChange={(e) => setProductSearch(e.target.value)}
+                                    placeholder="Search loaded products..."
+                                    className="h-12 w-full bg-transparent border-none focus:ring-0 text-sm pl-12 pr-4 placeholder:text-muted-foreground/50"
+                                />
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full h-12 w-12 shrink-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => setIsToolbarExpanded(false)}
+                                title="Hide search bar"
+                            >
+                                <EyeOff className="h-5 w-5" />
+                            </Button>
+                            <Button
+                                className="rounded-full h-12 w-12 p-0 bg-primary text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0"
+                                onClick={() => setOpenAddProductDialog(true)}
+                                disabled={!canEdit}
+                                title="Add Product Manually"
+                            >
+                                <Plus className="h-6 w-6" />
+                            </Button>
                         </div>
+                    ) : (
                         <Button
-                            className="rounded-full h-12 w-12 p-0 bg-primary text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0"
-                            onClick={() => setOpenAddProductDialog(true)}
-                            disabled={!canEdit}
-                            title="Add Product Manually"
+                            className="rounded-full h-12 w-12 p-0 bg-primary/30 hover:bg-primary/60 text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0 pointer-events-auto"
+                            onClick={() => setIsToolbarExpanded(true)}
+                            title="Show search bar"
                         >
-                            <Plus className="h-6 w-6" />
+                            <Eye className="h-5 w-5" />
                         </Button>
-                    </div>
+                    )}
                 </div>
             )}
         </div>
