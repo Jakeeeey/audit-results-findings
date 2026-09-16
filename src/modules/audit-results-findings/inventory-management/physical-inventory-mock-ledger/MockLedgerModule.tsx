@@ -83,8 +83,8 @@ import {
     RefreshCcw,
     Search,
     Save,
+    X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 import {
     MockLedgerAddProductDialog,
@@ -217,7 +217,6 @@ export function MockLedgerModule(props: Props) {
     const [isRebuildingGroups, setIsRebuildingGroups] = React.useState(false);
     const [isSavingDetailBatch, setIsSavingDetailBatch] = React.useState(false);
     const [openAddProductDialog, setOpenAddProductDialog] = React.useState(false);
-    const [isScrolled, setIsScrolled] = React.useState(false);
     const [isToolbarExpanded, setIsToolbarExpanded] = React.useState(false);
 
     const [openCommitDialog, setOpenCommitDialog] = React.useState(false);
@@ -236,32 +235,6 @@ export function MockLedgerModule(props: Props) {
             }
         };
     }, [previewBlobUrl]);
-
-    React.useEffect(() => {
-        let ticking = false;
-
-        const handleScroll = () => {
-            if (!ticking) {
-                window.requestAnimationFrame(() => {
-                    const sentinel = document.getElementById("pi-manual-product-finder-sentinel");
-                    if (sentinel) {
-                        const rect = sentinel.getBoundingClientRect();
-                        const shouldBeScrolled = rect.bottom < 0;
-
-                        setIsScrolled(prev => {
-                            if (prev !== shouldBeScrolled) return shouldBeScrolled;
-                            return prev;
-                        });
-                    }
-                    ticking = false;
-                });
-                ticking = true;
-            }
-        };
-
-        document.addEventListener("scroll", handleScroll, { capture: true, passive: true });
-        return () => document.removeEventListener("scroll", handleScroll, true);
-    }, []);
 
     const [branches, setBranches] = React.useState<BranchRow[]>([]);
     const [suppliers, setSuppliers] = React.useState<SupplierRow[]>([]);
@@ -306,6 +279,7 @@ export function MockLedgerModule(props: Props) {
     });
 
     const [productSearch, setProductSearch] = React.useState("");
+    const deferredProductSearch = React.useDeferredValue(productSearch);
     const [activeQuickFilter, setActiveQuickFilter] = React.useState<
         "ALL" | "VARIANCE" | "UNCOUNTED"
     >("ALL");
@@ -442,7 +416,7 @@ export function MockLedgerModule(props: Props) {
             const matchesCategory =
                 activeQuickCategory === "ALL" || categoryLabel === activeQuickCategory;
 
-            const matchesSearch = matchesGroupedRowSearch(group, productSearch);
+            const matchesSearch = matchesGroupedRowSearch(group, deferredProductSearch);
 
             const matchesOperationalFilter =
                 activeQuickFilter === "ALL" ||
@@ -451,7 +425,7 @@ export function MockLedgerModule(props: Props) {
 
             return matchesCategory && matchesSearch && matchesOperationalFilter;
         });
-    }, [activeQuickCategory, activeQuickFilter, groupedRows, productSearch]);
+    }, [activeQuickCategory, activeQuickFilter, groupedRows, deferredProductSearch]);
 
     const eligibleVariants = React.useMemo(() => {
         const sId = Number(filters.supplier_id);
@@ -1358,11 +1332,14 @@ export function MockLedgerModule(props: Props) {
 
     const handleSaveDraft = React.useCallback(async () => {
         try {
+            setIsSavingDetailBatch(true);
             await flushDirtyDetails();
             toast.success("Draft saved successfully.");
         } catch (error) {
             const message = error instanceof Error ? error.message : "Failed to save draft.";
             toast.error(message);
+        } finally {
+            setIsSavingDetailBatch(false);
         }
     }, [flushDirtyDetails]);
 
@@ -2253,54 +2230,81 @@ export function MockLedgerModule(props: Props) {
             />
 
             {groupedRows.length > 0 && (
-                <div
-                    className={cn(
-                        "fixed bottom-6 z-[9999] transition-all duration-500 ease-in-out pointer-events-none",
-                        isScrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20",
-                        isToolbarExpanded 
-                            ? "left-1/2 -translate-x-1/2 w-full max-w-xl px-4" 
-                            : "right-6"
-                    )}
-                >
-                    {isToolbarExpanded ? (
-                        <div className="flex items-center gap-3 bg-background/95 backdrop-blur-xl border border-primary/20 shadow-[0_-10px_50px_rgba(0,0,0,0.25)] rounded-full p-2 ring-1 ring-black/5 pointer-events-auto">
-                            <div className="relative flex-1 bg-muted/40 rounded-full border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-all">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/60" />
-                                <input
-                                    value={productSearch}
-                                    onChange={(e) => setProductSearch(e.target.value)}
-                                    placeholder="Search loaded products..."
-                                    className="h-12 w-full bg-transparent border-none focus:ring-0 text-sm pl-12 pr-4 placeholder:text-muted-foreground/50"
-                                />
+                <>
+                    {/* Floating Save Draft & Eye Toggle (Bottom-Right Stack) */}
+                    <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 items-end transition-all duration-300 pointer-events-none">
+                        {canEdit && (
+                            <Button
+                                className="rounded-full h-12 w-12 p-0 bg-emerald-500/30 hover:bg-emerald-500/60 text-emerald-600 dark:text-emerald-300 shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all shrink-0 pointer-events-auto"
+                                onClick={handleSaveDraft}
+                                disabled={isSavingDetailBatch}
+                                title="Save Draft"
+                            >
+                                {isSavingDetailBatch ? (
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                ) : (
+                                    <Save className="h-5 w-5" />
+                                )}
+                            </Button>
+                        )}
+
+                        {!isToolbarExpanded && (
+                            <Button
+                                className="rounded-full h-12 w-12 p-0 bg-primary/30 hover:bg-primary/60 text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0 pointer-events-auto"
+                                onClick={() => setIsToolbarExpanded(true)}
+                                title="Show search bar"
+                            >
+                                <Eye className="h-5 w-5" />
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Floating Search Bar (Bottom-Center Expanded) */}
+                    {isToolbarExpanded && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-xl px-4 z-[9999] transition-all duration-300 pointer-events-none">
+                            <div className="flex items-center gap-3 bg-background/95 backdrop-blur-xl border border-primary/20 shadow-[0_-10px_50px_rgba(0,0,0,0.25)] rounded-full p-2 ring-1 ring-black/5 pointer-events-auto">
+                                <div className="relative flex-1 bg-muted/40 rounded-full border border-transparent focus-within:bg-background transition-all">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/60" />
+                                    <input
+                                        value={productSearch}
+                                        onChange={(e) => setProductSearch(e.target.value)}
+                                        placeholder="Search loaded products..."
+                                        className="h-12 w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:outline-none text-sm pl-12 pr-10 placeholder:text-muted-foreground/50"
+                                    />
+                                    {Boolean(productSearch) && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                                            onClick={() => setProductSearch("")}
+                                            title="Clear search"
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    )}
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="rounded-full h-12 w-12 shrink-0 text-muted-foreground hover:text-foreground"
+                                    onClick={() => setIsToolbarExpanded(false)}
+                                    title="Hide search bar"
+                                >
+                                    <EyeOff className="h-5 w-5" />
+                                </Button>
+                                <Button
+                                    className="rounded-full h-12 w-12 p-0 bg-primary text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0"
+                                    onClick={() => setOpenAddProductDialog(true)}
+                                    disabled={!canEdit}
+                                    title="Add Product Manually"
+                                >
+                                    <Plus className="h-6 w-6" />
+                                </Button>
                             </div>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="rounded-full h-12 w-12 shrink-0 text-muted-foreground hover:text-foreground"
-                                onClick={() => setIsToolbarExpanded(false)}
-                                title="Hide search bar"
-                            >
-                                <EyeOff className="h-5 w-5" />
-                            </Button>
-                            <Button
-                                className="rounded-full h-12 w-12 p-0 bg-primary text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0"
-                                onClick={() => setOpenAddProductDialog(true)}
-                                disabled={!canEdit}
-                                title="Add Product Manually"
-                            >
-                                <Plus className="h-6 w-6" />
-                            </Button>
                         </div>
-                    ) : (
-                        <Button
-                            className="rounded-full h-12 w-12 p-0 bg-primary/30 hover:bg-primary/60 text-primary-foreground shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-all shrink-0 pointer-events-auto"
-                            onClick={() => setIsToolbarExpanded(true)}
-                            title="Show search bar"
-                        >
-                            <Eye className="h-5 w-5" />
-                        </Button>
                     )}
-                </div>
+                </>
             )}
         </div>
     );
