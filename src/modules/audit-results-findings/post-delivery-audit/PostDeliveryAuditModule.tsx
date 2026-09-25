@@ -135,6 +135,10 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
   }, [page, fetchData]);
 
   const handleFilter = () => {
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      toast.error("Date Range From cannot be later than Date Range To");
+      return;
+    }
     setAppliedFilters({
       dateFrom,
       dateTo,
@@ -262,7 +266,14 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
               <Input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDateFrom(val);
+                  if (dateTo && val > dateTo) {
+                    setDateTo(val);
+                  }
+                }}
                 className="bg-background border-border focus-visible:ring-primary/20 h-11 text-xs font-bold uppercase transition-all"
               />
             </div>
@@ -273,7 +284,14 @@ export default function PostDeliveryAuditModule({ user }: { user?: { id: number 
               <Input
                 type="date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDateTo(val);
+                  if (dateFrom && val < dateFrom) {
+                    setDateFrom(val);
+                  }
+                }}
                 className="bg-background border-border focus-visible:ring-primary/20 h-11 text-xs font-bold uppercase transition-all"
               />
             </div>
