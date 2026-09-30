@@ -40,7 +40,8 @@ export interface ReturnedItem {
   qty: number;
   unit: string;
   amount: number;
-  receivedByWarehouse: string | boolean;
+  salesReturnedNo?: string;
+  remarks?: string;
 }
 
 export interface RejectedItem {
@@ -49,7 +50,8 @@ export interface RejectedItem {
   qty: number;
   unit: string;
   amount: number;
-  receivedByWarehouse: string | boolean;
+  salesReturnedNo?: string;
+  remarks?: string;
 }
 
 export interface PostDispatchAuditReportData {
