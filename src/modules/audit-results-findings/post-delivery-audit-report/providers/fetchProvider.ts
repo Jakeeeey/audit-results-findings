@@ -48,7 +48,8 @@ function mapFlatArrayToPdfData(rows: any[]): PostDispatchAuditReportData {
         qty: getValue(row, ['QTY', 'qty']),
         unit: getValue(row, ['Unit', 'unit']),
         amount: getValue(row, ['Amount', 'amount']),
-        receivedByWarehouse: getValue(row, ['ReceivedByWarehouse', 'receivedByWarehouse', 'received_by_warehouse'])
+        salesReturnedNo: getValue(row, ['salesReturnNo', 'SalesReturnNo', 'sales_return_no', 'SalesReturnedNo', 'salesReturnedNo', 'sales_returned_no']),
+        remarks: getValue(row, ['Remarks', 'remarks'])
       });
     } else if (category === 'rud') {
       rejectedUponDelivery.push({
@@ -57,7 +58,8 @@ function mapFlatArrayToPdfData(rows: any[]): PostDispatchAuditReportData {
         qty: getValue(row, ['QTY', 'qty']),
         unit: getValue(row, ['Unit', 'unit']),
         amount: getValue(row, ['Amount', 'amount']),
-        receivedByWarehouse: getValue(row, ['ReceivedByWarehouse', 'receivedByWarehouse', 'received_by_warehouse'])
+        salesReturnedNo: getValue(row, ['salesReturnNo', 'SalesReturnNo', 'sales_return_no', 'SalesReturnedNo', 'salesReturnedNo', 'sales_returned_no']),
+        remarks: getValue(row, ['Remarks', 'remarks'])
       });
     }
   }
