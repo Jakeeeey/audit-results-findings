@@ -6,7 +6,7 @@
     "dev": "next dev",
     "prebuild": "shx rm -rf .next/standalone .next/dev",
     "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next build",
-    "postbuild": "shx cp -r .next/static .next/standalone/.next/static && shx cp -r public/. .next/standalone/public && shx cp .env.local .next/standalone/.env.local",
+    "postbuild": "shx mkdir -p .next/standalone/.next && shx cp -r .next/static .next/standalone/.next/static && shx cp -r public/. .next/standalone/public && node -e \"if(require('fs').existsSync('.env.local'))require('fs').copyFileSync('.env.local','.next/standalone/.env.local')\"",
     "start": "node .next/standalone/server.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit"
