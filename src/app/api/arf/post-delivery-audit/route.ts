@@ -250,12 +250,31 @@ export async function GET(req: NextRequest) {
 
       // 1. Fetch Post Dispatch Plans (Posted)
       const planFilters: Record<string, unknown> = { status: { _eq: "Posted" } };
-      if (dateFrom && dateTo) {
-        // Filter by either Time of Dispatch or Time of Arrival
-        planFilters._or = [
-          { time_of_dispatch: { _between: [dateFrom, dateTo] } },
-          { time_of_arrival: { _between: [dateFrom, dateTo] } }
-        ];
+      if (dateFrom || dateTo) {
+        let start = dateFrom ? (dateFrom.includes("T") || dateFrom.includes(" ") ? dateFrom : `${dateFrom} 00:00:00`) : null;
+        let end = dateTo ? (dateTo.includes("T") || dateTo.includes(" ") ? dateTo : `${dateTo} 23:59:59`) : null;
+
+        if (start && end) {
+          if (start > end) {
+            const temp = start;
+            start = end;
+            end = temp;
+          }
+          planFilters._or = [
+            { time_of_dispatch: { _between: [start, end] } },
+            { time_of_arrival: { _between: [start, end] } }
+          ];
+        } else if (start) {
+          planFilters._or = [
+            { time_of_dispatch: { _gte: start } },
+            { time_of_arrival: { _gte: start } }
+          ];
+        } else if (end) {
+          planFilters._or = [
+            { time_of_dispatch: { _lte: end } },
+            { time_of_arrival: { _lte: end } }
+          ];
+        }
       }
       if (driverId && driverId !== "ALL") {
         planFilters.driver_id = { _eq: driverId };

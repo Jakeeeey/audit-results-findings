@@ -72,14 +72,28 @@ export function FilterSection({
           <input 
             type="date" 
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            max={dateTo || undefined}
+            onChange={(e) => {
+              const val = e.target.value;
+              setDateFrom(val);
+              if (dateTo && val > dateTo) {
+                setDateTo(val);
+              }
+            }}
             className="bg-transparent text-sm outline-none w-full"
           />
           <span className="text-slate-300">-</span>
           <input 
             type="date" 
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            min={dateFrom || undefined}
+            onChange={(e) => {
+              const val = e.target.value;
+              setDateTo(val);
+              if (dateFrom && val < dateFrom) {
+                setDateFrom(val);
+              }
+            }}
             className="bg-transparent text-sm outline-none w-full"
           />
         </div>
