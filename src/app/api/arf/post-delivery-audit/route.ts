@@ -89,6 +89,7 @@ interface DirectusReturn {
   return_id: number;
   return_number: string;
   total_amount: number;
+  invoice_no?: string;
 }
 
 interface DirectusMemo {
