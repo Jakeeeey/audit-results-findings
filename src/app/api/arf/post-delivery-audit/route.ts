@@ -568,26 +568,49 @@ export async function GET(req: NextRequest) {
       const allDepts = (await allDeptsRes.json()).data || [] as { department_id: number; department_name: string }[];
       const deptMap = new Map(allDepts.map((d: { department_id: number; department_name: string }) => [String(d.department_id), d.department_name]));
 
-      // 4. Fetch Sales Returns and Linking Table
+      // 4. Fetch Sales Returns (both via direct invoice_no and linking table)
       let returns: DirectusReturn[] = [];
       let returnLinks: DirectusReturnLink[] = [];
 
-      if (invoiceIds.length > 0) {
-        // Fetch the linking table first: sales_invoice_sales_return
-        const linkUrl = `${DIRECTUS_URL}/items/sales_invoice_sales_return?limit=-1&filter[invoice_no][_in]=${invoiceIds.join(",")}`;
-        const linkRes = await fetch(linkUrl, { headers: fetchHeaders, cache: "no-store" });
-        returnLinks = (await linkRes.json()).data || [];
+      const siNos = salesInvoices.map((si: DirectusSI) => si.invoice_no).filter(Boolean);
 
-        const returnIds = [...new Set(returnLinks.map((l: DirectusReturnLink) => l.return_no))];
-        if (returnIds.length > 0) {
-          const srUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=*&filter[return_id][_in]=${returnIds.join(",")}`;
-          const srRes = await fetch(srUrl, { headers: fetchHeaders, cache: "no-store" });
-          returns = (await srRes.json()).data || [];
+      // 4a. Direct lookup from sales_return using invoice_no (regardless of isApplied)
+      if (siNos.length > 0) {
+        try {
+          const directSrUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=*&filter[invoice_no][_in]=${encodeURIComponent(siNos.join(","))}`;
+          const directSrRes = await fetch(directSrUrl, { headers: fetchHeaders, cache: "no-store" });
+          const directSrJson = await directSrRes.json();
+          returns = (directSrJson.data || []) as DirectusReturn[];
+        } catch (e) {
+          console.error("Error fetching sales returns directly by invoice_no:", e);
+        }
+      }
+
+      // 4b. Also fetch via linking table (sales_invoice_sales_return) if any additional returns exist
+      if (invoiceIds.length > 0) {
+        try {
+          const linkUrl = `${DIRECTUS_URL}/items/sales_invoice_sales_return?limit=-1&filter[invoice_no][_in]=${invoiceIds.join(",")}`;
+          const linkRes = await fetch(linkUrl, { headers: fetchHeaders, cache: "no-store" });
+          returnLinks = (await linkRes.json()).data || [];
+
+          const returnIds = [...new Set(returnLinks.map((l: DirectusReturnLink) => l.return_no))];
+          if (returnIds.length > 0) {
+            const srUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=*&filter[return_id][_in]=${returnIds.join(",")}`;
+            const srRes = await fetch(srUrl, { headers: fetchHeaders, cache: "no-store" });
+            const linkedSRs = (await srRes.json()).data || [];
+            // Merge unique returns
+            linkedSRs.forEach((lsr: DirectusReturn) => {
+              if (!returns.some((r) => r.return_id === lsr.return_id)) {
+                returns.push(lsr);
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Error fetching linked sales returns:", e);
         }
       }
 
       // 5. Fetch Customer Memos for discrepancy tracking
-      const siNos = salesInvoices.map((si: DirectusSI) => si.invoice_no).filter(Boolean);
       let memos: DirectusMemo[] = [];
       if (siNos.length > 0) {
         const memoUrl = `${DIRECTUS_URL}/items/customers_memo?limit=-1&fields=customer_reference,amount,memo_number&filter[customer_reference][_in]=${siNos.join(",")}`;
@@ -600,13 +623,27 @@ export async function GET(req: NextRequest) {
         const si = salesInvoices.find((s: DirectusSI) => s.invoice_id === pdi.invoice_id);
         const memo = memos.find((m: DirectusMemo) => String(m.customer_reference) === String(si?.invoice_no));
 
-        // Find ALL return links for this invoice
-        const currentReturnLinks = returnLinks.filter((l: DirectusReturnLink) => Number(l.invoice_no) === Number(pdi.invoice_id));
-        const linkedReturns = currentReturnLinks.map((link: DirectusReturnLink) => {
-          const r = returns.find((ret: DirectusReturn) => ret.return_id === link.return_no);
-          return r ? { no: r.return_number, amount: Number(r.total_amount) || 0 } : null;
-        }).filter(Boolean);
+        // Find ALL returns for this invoice (both direct by invoice_no and via linking table)
+        const matchedReturns: { no: string; amount: number }[] = [];
+        
+        // 1. Direct match by invoice_no
+        if (si?.invoice_no) {
+          const directMatched = returns.filter((r: DirectusReturn) => String(r.invoice_no).toLowerCase() === String(si.invoice_no).toLowerCase());
+          directMatched.forEach((r: DirectusReturn) => {
+            matchedReturns.push({ no: r.return_number, amount: Number(r.total_amount) || 0 });
+          });
+        }
 
+        // 2. Linking table match
+        const currentReturnLinks = returnLinks.filter((l: DirectusReturnLink) => Number(l.invoice_no) === Number(pdi.invoice_id));
+        currentReturnLinks.forEach((link: DirectusReturnLink) => {
+          const r = returns.find((ret: DirectusReturn) => ret.return_id === link.return_no);
+          if (r && !matchedReturns.some(mr => mr.no === r.return_number)) {
+            matchedReturns.push({ no: r.return_number, amount: Number(r.total_amount) || 0 });
+          }
+        });
+
+        const linkedReturns = matchedReturns;
         const returnTotalAmount = linkedReturns.reduce((acc, curr) => acc + (curr?.amount || 0), 0);
 
         // Find concern record for this invoice
