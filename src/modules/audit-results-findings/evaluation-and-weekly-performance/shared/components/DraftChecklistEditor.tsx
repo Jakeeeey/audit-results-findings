@@ -47,16 +47,17 @@ export function DraftChecklistEditor({ detail, onSaved }: { detail: InspectionDe
     }
     return <section className="space-y-4 rounded-lg border p-4">
         <h3 className="font-semibold">Edit inspection draft</h3>
-        <p className="text-sm text-muted-foreground">Rate each criterion from 1–10. Remarks and images are optional. Unanswered criteria are allowed in drafts. Saving is not submission.</p>
-        <p className="rounded-md bg-muted p-3 text-xs" id="rating-legend">Rating guide: 1–2 Poor · 3–4 Needs improvement · 5–6 Fair · 7–8 Good · 9–10 Excellent</p>
+        <p className="text-sm text-muted-foreground">Rate each criterion from {evaluation.snapshot.version === 2 ? '0–5 (100 points maximum)' : '1–10 (200 points maximum; historical scale)'}. Remarks and images are optional. Unanswered criteria are allowed in drafts. Saving is not submission.</p>
+        <p className="rounded-md bg-muted p-3 text-xs" id="rating-legend">{evaluation.snapshot.version === 2 ? '0 Standard absent or completely unmet · 1 Major deficiencies; little compliance · 2 Partial compliance; several clear gaps · 3 Generally compliant; recurring minor gaps · 4 Fully compliant except isolated minor issues · 5 Fully compliant, consistently maintained, with supporting evidence' : 'Rating guide: 1–2 Poor · 3–4 Needs improvement · 5–6 Fair · 7–8 Good · 9–10 Excellent'}</p>
+        <p className="text-sm text-muted-foreground">Record evidence for low ratings. Escalate safety hazards immediately regardless of the overall score, and verify previous corrective actions.</p>
         <fieldset disabled={saving} className="space-y-4">
             {[...new Set(evaluation.snapshot.criteria.map(c => c.pillar))].map(pillar => <section key={pillar} className="space-y-4 rounded-lg border p-4">
                 <h3 className="text-lg font-semibold">{CHECKLIST.find(c => c.pillar === pillar)?.pillarTitle ?? pillar}</h3>
                 {evaluation.snapshot.criteria.map((criterion, index) => criterion.pillar !== pillar ? null : <div key={criterion.code} id={`question-${criterion.code}`} className="space-y-2 border-b pb-3">
                 <p id={`rating-${criterion.code}`} className="text-sm font-medium">{criterion.position}. {criterion.label}</p>
                 <div role="group" aria-labelledby={`rating-${criterion.code}`} aria-describedby="rating-legend" className="flex flex-wrap gap-2">
-                    {Array.from({ length: 10 }, (_, i) => i + 1).map(value => <Button key={value} type="button" size="sm" variant={answers[index].rating === value ? 'default' : 'outline'} aria-pressed={answers[index].rating === value}
-                        aria-label={`${value} out of 10`} onClick={() => setAnswers(previous => previous.map((answer, i) => i === index ? { ...answer, rating: value } : answer))}>{value}</Button>)}
+                    {Array.from({ length: evaluation.snapshot.version === 2 ? 6 : 10 }, (_, i) => i + (evaluation.snapshot.version === 2 ? 0 : 1)).map(value => <Button key={value} type="button" size="sm" variant={answers[index].rating === value ? 'default' : 'outline'} aria-pressed={answers[index].rating === value}
+                        aria-label={`${value} out of ${criterion.maximum_rating}`} onClick={() => setAnswers(previous => previous.map((answer, i) => i === index ? { ...answer, rating: value } : answer))}>{value}</Button>)}
                     <Button type="button" size="sm" variant="ghost" onClick={() => setAnswers(previous => previous.map((answer, i) => i === index ? { ...answer, rating: null } : answer))}>Clear</Button>
                 </div>
                 <Label htmlFor={`remarks-${criterion.code}`} className="text-xs">Remarks (optional)</Label>

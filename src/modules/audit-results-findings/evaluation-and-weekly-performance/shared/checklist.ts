@@ -12,24 +12,26 @@ export const CHECKLIST = Object.freeze(definitions.flatMap(([pillar, title, labe
     Object.freeze({ code: `${pillar}_${index + 1}`, pillar, pillarTitle: title, position: index + 1, label, maximum_rating: 10 as const }))));
 const codes = new Set<string>(CHECKLIST.map(c => c.code));
 const criterionCode = z.string().refine(value => codes.has(value), 'Unknown criterion');
-const rating = z.number().int().min(1).max(10).nullable();
+const rating = z.number().int().min(0).max(10).nullable();
 const criterionRemarks = z.string().max(4000).nullable();
 export const responseSchema = z.object({ criterionCode, rating, remarks: criterionRemarks }).strict();
 export type CriterionResponse = z.infer<typeof responseSchema>;
 export const snapshotSchema = z.object({
-    version: z.number().int().min(1).max(4294967295), maximum_points: z.literal(200), weighting: z.literal('EQUAL'),
+    version: z.union([z.literal(1), z.literal(2)]), maximum_points: z.union([z.literal(200), z.literal(100)]), weighting: z.literal('EQUAL'),
     criteria: z.array(z.object({ code: criterionCode, pillar: z.string(), position: z.number().int().min(1).max(4),
-        label: z.string().trim().min(1), maximum_rating: z.literal(10) }).strict()).length(20),
+        label: z.string().trim().min(1), maximum_rating: z.union([z.literal(10), z.literal(5)]) }).strict()).length(20),
 }).strict().superRefine((snapshot, ctx) => {
     if (new Set(snapshot.criteria.map(c => c.code)).size !== 20) ctx.addIssue({ code: 'custom', message: 'Duplicate snapshot criterion' });
+    const maximum = snapshot.version === 2 ? 5 : 10;
+    if (snapshot.maximum_points !== maximum * 20 || snapshot.criteria.some(c => c.maximum_rating !== maximum)) ctx.addIssue({ code: 'custom', message: 'Checklist scale does not match its version' });
     for (const item of snapshot.criteria) {
         const expected = CHECKLIST.find(c => c.code === item.code);
         if (expected?.pillar !== item.pillar || expected.position !== item.position) ctx.addIssue({ code: 'custom', message: 'Invalid pillar or criterion position' });
     }
 });
 export type ChecklistSnapshot = z.infer<typeof snapshotSchema>;
-export function createSnapshot() {
-    const snapshot = snapshotSchema.parse({ version: 1, maximum_points: 200, weighting: 'EQUAL', criteria: CHECKLIST.map(({ code, pillar, position, label, maximum_rating }) => ({ code, pillar, position, label, maximum_rating })) });
+export function createSnapshot(version: 1 | 2 = 2) {
+    const snapshot = snapshotSchema.parse({ version, maximum_points: version === 2 ? 100 : 200, weighting: 'EQUAL', criteria: CHECKLIST.map(({ code, pillar, position, label }) => ({ code, pillar, position, label, maximum_rating: version === 2 ? 5 : 10 })) });
     snapshot.criteria.forEach(Object.freeze);
     Object.freeze(snapshot.criteria);
     return Object.freeze(snapshot);
@@ -39,16 +41,18 @@ export function scoreChecklist(storedSnapshot: unknown, expectedVersion: number,
     if (snapshot.version !== expectedVersion) throw new Error('Snapshot version mismatch');
     const responses = z.array(responseSchema).max(20).parse(input);
     if (new Set(responses.map(r => r.criterionCode)).size !== responses.length) throw new Error('Duplicate response');
+    const minimum = snapshot.version === 2 ? 0 : 1;
+    if (responses.some(r => r.rating !== null && (r.rating < minimum || r.rating > snapshot.criteria.find(c => c.code === r.criterionCode)!.maximum_rating))) throw new Error('Rating outside the saved checklist scale');
     const rated = responses.filter(r => r.rating !== null);
     if (requireComplete && rated.length !== 20) throw new Error('Exactly 20 ratings are required');
     const earned = rated.reduce((total, r) => total + (r.rating ?? 0), 0);
     const pillars = definitions.map(([code, title]) => {
         const selected = responses.filter(r => snapshot.criteria.some(c => c.code === r.criterionCode && c.pillar === code));
         const points = selected.reduce((total, r) => total + (r.rating ?? 0), 0);
-        return { code, title, earned: points, maximum: 40, answered: selected.filter(r => r.rating !== null).length };
+        return { code, title, earned: points, maximum: snapshot.maximum_points / 5, answered: selected.filter(r => r.rating !== null).length };
     });
-    return { earned, maximum: 200, answered: rated.length, complete: rated.length === 20,
-        percentage: rated.length ? earned / 2 : null, pillars };
+    return { earned, maximum: snapshot.maximum_points, answered: rated.length, complete: rated.length === 20,
+        percentage: rated.length ? earned / snapshot.maximum_points * 100 : null, pillars };
 }
 export interface EvaluationDraft { responses: CriterionResponse[]; remarks: string | null }
 const draftPatchSchema = z.object({

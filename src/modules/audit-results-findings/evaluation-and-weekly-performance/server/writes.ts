@@ -48,6 +48,7 @@ export async function mutate(collection: 'arf_evaluation_schedules' | 'arf_evalu
                 throw new EvaluationError(503, 'STORAGE_COLLATION_REQUIRED', 'The database saving triggers have a collation mismatch. Apply scripts/evaluation-collation-fix.sql, then retry your draft.');
             }
             const conflicts: Record<string, string> = {
+                chk_arf_evaluation_snapshot_shape: 'The database still supports only the historical 1–10 checklist. A versioned 0–5 database migration is required before starting a new evaluation. Existing evaluations remain available.',
                 EVAL_STALE_DRAFT: 'The saved draft changed. Reload the evaluation before editing again.',
                 EVAL_DEADLINE: 'The 5:00 PM Manila submission cutoff has passed.',
                 EVAL_ALL_RATINGS_REQUIRED: 'Save all 20 ratings before submitting.',
@@ -120,7 +121,7 @@ export async function startInspection(access: Access, scheduleId: number) {
     if (detail.schedule.status !== 'SCHEDULED' || Date.now() < localInstant(detail.schedule.week, '00:00')) throw new EvaluationError(409, 'START_NOT_ALLOWED', 'This inspection cannot be started now');
     try {
         return await mutate('arf_evaluations', 'POST', { schedule_id: scheduleId, inspector_id: access.userId,
-            checklist_version: 1, checklist_snapshot: createSnapshot(), status: 'IN_PROGRESS', started_at: new Date().toISOString().replace('T', ' ').replace('Z', '') });
+            checklist_version: 2, checklist_snapshot: createSnapshot(), status: 'IN_PROGRESS', started_at: new Date().toISOString().replace('T', ' ').replace('Z', '') });
     } catch (error) {
         const recovered = await inspectionDetail(access, scheduleId);
         if (recovered.evaluation) {
@@ -139,7 +140,12 @@ export async function cancelInspection(access: Access, scheduleId: number) {
         throw new EvaluationError(409, 'CANCEL_NOT_ALLOWED', 'Only unstarted evaluations can be cancelled, before their reporting week begins.');
     }
     try {
-        await mutate('arf_evaluation_schedules', 'PATCH', { cancelled_at: new Date().toISOString().replace('T', ' ').replace('Z', '') }, scheduleId);
+        // The database requires the complete cancellation audit tuple together.
+        await mutate('arf_evaluation_schedules', 'PATCH', {
+            cancelled_at: new Date().toISOString().replace('T', ' ').replace('Z', ''),
+            cancelled_by: access.userId,
+            cancellation_reason: 'Cancelled by planner through the evaluation UI.',
+        }, scheduleId);
     } catch (error) {
         const recovered = await inspectionDetail(access, scheduleId);
         if (recovered.schedule.status === 'CANCELLED') return recovered;
@@ -156,6 +162,7 @@ export async function saveDraft(access: Access, scheduleId: number, value: unkno
     if (!detail.evaluation || detail.schedule.status !== 'IN_PROGRESS') throw new EvaluationError(409, 'NOT_EDITABLE', 'Start this inspection first; expired or completed inspections cannot be edited');
     const draft = patchDraft({ remarks: detail.evaluation.remarks, responses: detail.evaluation.responses }, input.patch);
     const responses = detail.evaluation.snapshot.criteria.map(c => draft.responses.find(r => r.criterionCode === c.code) ?? { criterionCode: c.code, rating: null, remarks: null });
+    scoreChecklist(detail.evaluation.snapshot, detail.evaluation.snapshot.version, responses);
     // No separate response writes: the DB applies all answers + revision atomically.
     await mutate('arf_evaluations', 'PATCH', { draft_save: { requestId: input.requestId, expectedRevision: input.expectedRevision, actorId: access.userId,
         remarks: draft.remarks, responses } }, detail.evaluation.id);
