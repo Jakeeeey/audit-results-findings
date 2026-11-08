@@ -5,7 +5,31 @@ const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const DIRECTUS_TOKEN =
     process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || "";
 
-const TABLE_PH = "physical_inventory_v2";
+const TABLE_PH = "physical_inventory";
+
+type BufferFlagLike = {
+    type?: string;
+    data?: unknown[];
+};
+
+function normalizeFlagValue(value: unknown): number {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+    }
+    if (
+        typeof value === "object" &&
+        value !== null &&
+        "data" in value &&
+        Array.isArray((value as BufferFlagLike).data) &&
+        ((value as BufferFlagLike).data?.length ?? 0) > 0
+    ) {
+        const first = (value as BufferFlagLike).data![0];
+        if (typeof first === "number" && Number.isFinite(first)) {
+            return first;
+        }
+    }
+    return 0;
+}
 
 type RouteContext = {
     params: Promise<{
@@ -108,26 +132,32 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             );
         }
 
-        if (header.isCancelled === 1) {
+        if (normalizeFlagValue(header.isCancelled) === 1) {
             return NextResponse.json(
                 { error: "Physical Inventory is already cancelled." },
                 { status: 400 },
             );
         }
 
-        if (header.isComitted === 1) {
+        if (normalizeFlagValue(header.isComitted) === 1) {
             return NextResponse.json(
                 { error: "Committed Physical Inventory cannot be cancelled." },
                 { status: 400 },
             );
         }
 
+        const getPhTimeISOString = () => {
+            const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+            const pad = (n: number) => n.toString().padStart(2, "0");
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        };
+
         const updated = await directusPatch<PhysicalInventoryHeaderRow>(
             `/items/${TABLE_PH}/${headerId}`,
             {
                 isCancelled: 1,
                 isComitted: 0,
-                cancelled_at: new Date().toISOString(),
+                cancelled_at: getPhTimeISOString(),
             },
         );
 

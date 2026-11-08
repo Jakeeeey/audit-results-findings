@@ -91,14 +91,13 @@ function normalizeUpdateItem(value: unknown): BulkDetailUpdateItem | null {
     }
 
     return normalized;
-    return normalized;
 }
 
 async function patchDetailRow(
     item: BulkDetailUpdateItem,
 ): Promise<PhysicalInventoryDetailRow> {
     const upstream = new URL(
-        `/items/physical_inventory_details_v2/${item.id}`,
+        `/items/physical_inventory_details/${item.id}`,
         DIRECTUS_BASE_URL,
     );
 

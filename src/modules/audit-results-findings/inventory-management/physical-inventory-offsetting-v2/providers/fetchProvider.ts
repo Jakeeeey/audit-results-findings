@@ -65,6 +65,12 @@ function toSelectableRow(
     };
 }
 
+function nowLiteralIso(): string {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 async function fetchRunningInventoryForHeader(args: {
     header: PhysicalInventoryHeaderRow;
     branches: BranchRow[];
@@ -74,10 +80,10 @@ async function fetchRunningInventoryForHeader(args: {
     const { header, branches, suppliers, lookup } = args;
 
     const filters: PhysicalInventoryFiltersType = {
-        branch_id: header.branch_id,
-        supplier_id: header.supplier_id,
-        category_id: header.category_id,
-        price_type_id: header.price_type,
+        branch_id: header.branch_id ? Number(header.branch_id) : null,
+        supplier_id: header.supplier_id ? Number(header.supplier_id) : null,
+        category_id: header.category_id ? Number(header.category_id) : null,
+        price_type_id: header.price_type ? Number(header.price_type) : null,
     };
 
     if (
@@ -91,11 +97,12 @@ async function fetchRunningInventoryForHeader(args: {
 
     const params = resolveRunningInventoryFilterParams({
         branchId: filters.branch_id,
-        supplierId: filters.supplier_id,
+        supplierId: null, // Always fetch branch-wide stock to match Manual Count V2
         categoryId: filters.category_id,
         branches,
         suppliers,
         lookup,
+        cutOffDate: header.cutOff_date,
     });
 
     return fetchRunningInventoryFiltered(params);
@@ -160,7 +167,8 @@ export async function loadPhysicalInventoryOffsettingSnapshot(
         lookup,
     });
 
-    const priceTypeId = header.price_type;
+    const priceTypeId = header.price_type ? Number(header.price_type) : null;
+    const branchId = header.branch_id ? Number(header.branch_id) : null;
     const reportMeta = buildReportMeta({
         header,
         branches,
@@ -168,7 +176,7 @@ export async function loadPhysicalInventoryOffsettingSnapshot(
         lookup,
     });
 
-    if (!priceTypeId || !header.branch_id) {
+    if (!priceTypeId || !branchId) {
         return {
             header,
             status: derivePhysicalInventoryStatus({
@@ -188,7 +196,7 @@ export async function loadPhysicalInventoryOffsettingSnapshot(
     });
 
     const groupedRows = buildGroupedPhysicalInventoryRows({
-        branch_id: header.branch_id,
+        branch_id: branchId,
         variants,
         details,
         runningInventoryRows,
@@ -247,7 +255,7 @@ export async function loadPhysicalInventoryOffsettingSnapshot(
             return {
                 id: `offset-match-${matchNumber}`,
                 ph_id: header.id,
-                created_at: header.date_encoded || new Date().toISOString(),
+                created_at: header.date_encoded || nowLiteralIso(),
                 short_rows: groupData.short_rows,
                 over_rows: groupData.over_rows,
                 short_total,

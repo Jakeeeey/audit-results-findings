@@ -91,7 +91,7 @@ export async function PATCH(
             payload.encoder_id = encoderId;
         }
 
-        const upstream = new URL(`/items/physical_inventory_v2/${id}`, DIRECTUS_BASE_URL);
+        const upstream = new URL(`/items/physical_inventory/${id}`, DIRECTUS_BASE_URL);
 
         const response = await fetch(upstream.toString(), {
             method: "PATCH",

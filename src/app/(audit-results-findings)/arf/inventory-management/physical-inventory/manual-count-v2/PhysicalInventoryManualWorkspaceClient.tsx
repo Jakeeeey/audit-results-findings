@@ -17,6 +17,7 @@ export default function PhysicalInventoryManualWorkspaceClient({ currentUser }: 
     const [selectedHeaderId, setSelectedHeaderId] = React.useState<number | null>(null);
     const [activeKey, setActiveKey] = React.useState<string>("new-0");
     const [isListCollapsed, setIsListCollapsed] = React.useState(false);
+    const [listRefreshTrigger, setListRefreshTrigger] = React.useState(0);
 
     React.useEffect(() => {
         if (typeof window === "undefined") return;
@@ -50,6 +51,7 @@ export default function PhysicalInventoryManualWorkspaceClient({ currentUser }: 
         if (header.id && header.id !== selectedHeaderId) {
             setSelectedHeaderId(header.id);
         }
+        setListRefreshTrigger((prev) => prev + 1);
     }, [selectedHeaderId]);
 
     const activeHeaderId = React.useMemo(() => {
@@ -101,6 +103,7 @@ export default function PhysicalInventoryManualWorkspaceClient({ currentUser }: 
                             <div className="w-full pb-4 lg:w-[360px] lg:pb-0 xl:w-[380px] 2xl:w-[420px]">
                                 <PhysicalInventoryListModule
                                     selectedHeaderId={selectedHeaderId}
+                                    refreshTrigger={listRefreshTrigger}
                                     onOpenRecord={handleOpenRecord}
                                     onCreateNew={handleCreateNew}
                                 />

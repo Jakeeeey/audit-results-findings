@@ -5,6 +5,16 @@ import * as React from "react";
 import { useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { PhysicalInventoryOffsettingModule } from "@/modules/audit-results-findings/inventory-management/physical-inventory-offsetting-v2";
@@ -23,6 +33,8 @@ export default function PhysicalInventoryOffsettingWorkspaceClient({ currentUser
 
     const [selectedHeaderId, setSelectedHeaderId] = React.useState<number | null>(null);
     const [isListCollapsed, setIsListCollapsed] = React.useState(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
+    const [pendingRecordId, setPendingRecordId] = React.useState<number | null>(null);
 
     React.useEffect(() => {
         if (urlPhId) {
@@ -51,10 +63,21 @@ export default function PhysicalInventoryOffsettingWorkspaceClient({ currentUser
         };
     }, []);
 
-    const handleOpenRecord = React.useCallback((row: PhysicalInventoryListRow) => {
-        setSelectedHeaderId(row.id);
-        setIsListCollapsed(true);
-    }, []);
+    const handleOpenRecord = React.useCallback(
+        (row: PhysicalInventoryListRow) => {
+            if (row.id === selectedHeaderId) {
+                setIsListCollapsed(true);
+                return;
+            }
+            if (hasUnsavedChanges) {
+                setPendingRecordId(row.id);
+                return;
+            }
+            setSelectedHeaderId(row.id);
+            setIsListCollapsed(true);
+        },
+        [hasUnsavedChanges, selectedHeaderId],
+    );
 
     return (
         <div className="space-y-3">
@@ -115,6 +138,7 @@ export default function PhysicalInventoryOffsettingWorkspaceClient({ currentUser
                             key={selectedHeaderId}
                             phId={selectedHeaderId}
                             currentUser={currentUser}
+                            onUnsavedChangesChange={setHasUnsavedChanges}
                         />
                     ) : (
                         <div className="flex min-h-[420px] items-center justify-center rounded-2xl border bg-background">
@@ -132,6 +156,40 @@ export default function PhysicalInventoryOffsettingWorkspaceClient({ currentUser
                     )}
                 </div>
             </div>
+
+            <AlertDialog
+                open={pendingRecordId !== null}
+                onOpenChange={(open) => {
+                    if (!open) setPendingRecordId(null);
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Discard Unsaved Offset Changes?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            You have unsaved offset groups or remarks on the current Physical Inventory record. Switching to another record will discard these changes.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="cursor-pointer">
+                            Stay on Current Record
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            className="cursor-pointer bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => {
+                                if (pendingRecordId !== null) {
+                                    setHasUnsavedChanges(false);
+                                    setSelectedHeaderId(pendingRecordId);
+                                    setPendingRecordId(null);
+                                    setIsListCollapsed(true);
+                                }
+                            }}
+                        >
+                            Discard & Switch Record
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
