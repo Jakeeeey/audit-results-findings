@@ -27,6 +27,7 @@ type Props = {
     onChangePhNo: (value: string) => void;
     onChangeStockType: (value: "GOOD" | "BAD") => void;
     onChangeRemarks: (value: string) => void;
+    onBlurRemarks?: () => void;
     onChangeCutoffDate: (value: string) => void;
     onChangeStartingDate: (value: string) => void;
 };
@@ -80,6 +81,7 @@ export function PhysicalInventoryHeader(props: Props) {
         onChangePhNo,
         onChangeStockType,
         onChangeRemarks,
+        onBlurRemarks,
         onChangeCutoffDate,
         onChangeStartingDate,
     } = props;
@@ -214,6 +216,7 @@ export function PhysicalInventoryHeader(props: Props) {
                             placeholder="Enter remarks"
                             value={header?.remarks ?? ""}
                             onChange={(e) => onChangeRemarks(e.target.value)}
+                            onBlur={() => onBlurRemarks?.()}
                             disabled={!canEdit}
                             rows={3}
                             className="min-h-[96px] pl-9 resize-y"

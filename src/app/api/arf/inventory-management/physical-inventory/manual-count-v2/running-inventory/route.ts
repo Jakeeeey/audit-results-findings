@@ -120,7 +120,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
             if (branchId) {
                 const phData = await directusFetch<{ data: PhDetail[] }>(
-                    `${DIRECTUS_URL}/items/physical_inventory_details_v2?filter[ph_id][branch_id][_eq]=${branchId}&filter[ph_id][isCancelled][_eq]=0&filter[ph_id][isComitted][_eq]=1&fields=ph_id.id,ph_id.ph_no,ph_id.date_encoded,product_id.product_id,product_id.parent_id,product_id.unit_of_measurement.unit_name,product_id.unit_of_measurement_count,system_count,physical_count&limit=-1`
+                    `${DIRECTUS_URL}/items/physical_inventory_details?filter[ph_id][branch_id][_eq]=${branchId}&filter[ph_id][isCancelled][_eq]=0&filter[ph_id][isComitted][_eq]=1&fields=ph_id.id,ph_id.ph_no,ph_id.date_encoded,product_id.product_id,product_id.parent_id,product_id.unit_of_measurement.unit_name,product_id.unit_of_measurement_count,system_count,physical_count&limit=-1`
                 );
                 const phDetails = phData.data || [];
 

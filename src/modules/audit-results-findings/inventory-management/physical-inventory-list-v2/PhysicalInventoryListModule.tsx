@@ -45,6 +45,7 @@ import type {
 
 type Props = {
     selectedHeaderId?: number | null;
+    refreshTrigger?: number;
     onOpenRecord?: (row: PhysicalInventoryListRow) => void;
     onCreateNew?: () => void;
     hideCreateButton?: boolean;
@@ -122,6 +123,7 @@ function SearchableCombobox({
 export function PhysicalInventoryListModule(props: Props) {
     const {
         selectedHeaderId = null,
+        refreshTrigger = 0,
         onOpenRecord,
         onCreateNew,
         hideCreateButton = false,
@@ -160,7 +162,7 @@ export function PhysicalInventoryListModule(props: Props) {
 
     React.useEffect(() => {
         void loadRows();
-    }, [loadRows]);
+    }, [loadRows, refreshTrigger]);
 
     const filteredRows = React.useMemo(() => {
         const search = filters.search.trim().toLowerCase();

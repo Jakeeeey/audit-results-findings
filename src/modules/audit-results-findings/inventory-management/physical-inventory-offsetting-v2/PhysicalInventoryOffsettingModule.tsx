@@ -34,6 +34,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
     AlertTriangle,
     ArrowLeft,
+    FileText,
     GitCompareArrows,
     Loader2,
     Plus,
@@ -44,11 +45,13 @@ import {
 
 import { OffsettingGroupsTable } from "./components/OffsettingGroupsTable";
 import { OffsettingSelectionTable } from "./components/OffsettingSelectionTable";
+import { PhysicalInventoryUploadCountSheetDialog } from "../physical-inventory-manual-management-v2/components/PhysicalInventoryUploadCountSheetDialog";
 
 type Props = {
     phId: number;
     onBack?: () => void;
     onCommitted?: (header: PhysicalInventoryHeaderRow) => void;
+    onUnsavedChangesChange?: (hasUnsaved: boolean) => void;
     currentUser?: { id: number; name: string };
 };
 
@@ -73,6 +76,7 @@ function fmtMoney(value: number): string {
 export function PhysicalInventoryOffsettingModule({
                                                       phId,
                                                       onBack,
+                                                      onUnsavedChangesChange,
                                                       currentUser,
                                                   }: Props) {
     const [isLoading, setIsLoading] = React.useState(true);
@@ -80,7 +84,12 @@ export function PhysicalInventoryOffsettingModule({
     const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
     const [unsavedGroupIds, setUnsavedGroupIds] = React.useState<Set<string>>(new Set());
 
+    React.useEffect(() => {
+        onUnsavedChangesChange?.(hasUnsavedChanges);
+    }, [hasUnsavedChanges, onUnsavedChangesChange]);
+
     const [openRefreshConfirmDialog, setOpenRefreshConfirmDialog] = React.useState(false);
+    const [openCountSheetDialog, setOpenCountSheetDialog] = React.useState(false);
 
     const [header, setHeader] = React.useState<PhysicalInventoryHeaderRow | null>(null);
     const [varianceRows, setVarianceRows] = React.useState<OffsettingSelectableRow[]>([]);
@@ -299,36 +308,65 @@ export function PhysicalInventoryOffsettingModule({
 
             const allAssignedDetailIds = new Set<number>();
             const promises: Promise<unknown>[] = [];
+            const detailAssignmentMap = new Map<number, { match: number; remarks: string | null }>();
 
-            offsetGroups.forEach((group, index) => {
+            const normalizedGroups: PhysicalInventoryOffsetGroup[] = offsetGroups.map((group, index) => {
                 const matchNumber = index + 1;
+                const trimmedRemarks = group.remarks?.trim() || null;
                 const groupDetailIds = [
                     ...group.short_rows.map((r) => r.detail_id).filter((id): id is number => Boolean(id)),
                     ...group.over_rows.map((r) => r.detail_id).filter((id): id is number => Boolean(id)),
                 ];
-                groupDetailIds.forEach((id) => allAssignedDetailIds.add(id));
+
+                groupDetailIds.forEach((id) => {
+                    allAssignedDetailIds.add(id);
+                    detailAssignmentMap.set(id, { match: matchNumber, remarks: trimmedRemarks });
+                });
 
                 if (groupDetailIds.length > 0) {
                     promises.push(
                         persistOffsetGroupAssignment({
                             detailIds: groupDetailIds,
                             offsetMatch: matchNumber,
-                            offsetRemarks: group.remarks?.trim() || null,
+                            offsetRemarks: trimmedRemarks,
                         })
                     );
                 }
+
+                return {
+                    ...group,
+                    id: `offset-match-${matchNumber}`,
+                    offset_match: matchNumber,
+                    remarks: trimmedRemarks,
+                    short_rows: group.short_rows.map((r) => ({
+                        ...r,
+                        offset_match: matchNumber,
+                        offset_remarks: trimmedRemarks,
+                    })),
+                    over_rows: group.over_rows.map((r) => ({
+                        ...r,
+                        offset_match: matchNumber,
+                        offset_remarks: trimmedRemarks,
+                    })),
+                };
             });
 
-            // Clean up unassigned detail rows back to null
+            // Only reset detail rows that previously had an offset_match or offset_remarks in the database
             const unassignedDetailIds = varianceRows
-                .map((r) => r.detail_id)
-                .filter((id): id is number => id !== null && id !== undefined && !allAssignedDetailIds.has(id));
+                .filter(
+                    (r) =>
+                        r.detail_id !== null &&
+                        r.detail_id !== undefined &&
+                        !allAssignedDetailIds.has(r.detail_id) &&
+                        ((r.offset_match && r.offset_match > 0) || Boolean(r.offset_remarks))
+                )
+                .map((r) => r.detail_id as number);
 
             if (unassignedDetailIds.length > 0) {
                 promises.push(
                     persistOffsetGroupAssignment({
                         detailIds: unassignedDetailIds,
-                        offsetMatch: null,
+                        offsetMatch: 0,
                         offsetRemarks: null,
                     })
                 );
@@ -336,6 +374,26 @@ export function PhysicalInventoryOffsettingModule({
 
             await Promise.all(promises);
 
+            // Sync local state with normalized match numbers and updated row metadata
+            setOffsetGroups(normalizedGroups);
+            setVarianceRows((prev) =>
+                prev.map((row) => {
+                    if (!row.detail_id) return row;
+                    const assigned = detailAssignmentMap.get(row.detail_id);
+                    if (assigned) {
+                        return {
+                            ...row,
+                            offset_match: assigned.match,
+                            offset_remarks: assigned.remarks,
+                        };
+                    }
+                    return {
+                        ...row,
+                        offset_match: 0,
+                        offset_remarks: null,
+                    };
+                })
+            );
             setHasUnsavedChanges(false);
             setUnsavedGroupIds(new Set());
             toast.success("Offset groups and remarks saved successfully.");
@@ -516,6 +574,17 @@ export function PhysicalInventoryOffsettingModule({
                             <Printer className="mr-2 h-3.5 w-3.5" />
                             Print Report
                         </Button>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="cursor-pointer border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-900/60 dark:bg-teal-950/30 dark:text-teal-300 dark:hover:bg-teal-900/40"
+                            onClick={() => setOpenCountSheetDialog(true)}
+                            disabled={isLoading || isSaving || !header?.id}
+                        >
+                            <FileText className="mr-2 h-3.5 w-3.5" />
+                            View Count Sheet
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -660,7 +729,7 @@ export function PhysicalInventoryOffsettingModule({
                                 onClick={() => {
                                     void handleSaveOffsetChanges();
                                 }}
-                                disabled={!canOffset || isSaving || isLoading}
+                                disabled={!canOffset || isSaving || isLoading || !hasUnsavedChanges}
                             >
                                 {isSaving ? (
                                     <>
@@ -721,6 +790,16 @@ export function PhysicalInventoryOffsettingModule({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <PhysicalInventoryUploadCountSheetDialog
+                isOpen={openCountSheetDialog}
+                onOpenChange={setOpenCountSheetDialog}
+                physicalInventoryId={header?.id || null}
+                phNo={header?.ph_no}
+                canEdit={false}
+                isCommitted={true}
+                currentUserId={currentUser?.id}
+            />
         </div>
     );
 }

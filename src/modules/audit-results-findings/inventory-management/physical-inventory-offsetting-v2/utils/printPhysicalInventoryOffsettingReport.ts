@@ -163,7 +163,7 @@ function renderOffsetGroupProduct(row: OffsettingSelectableRow | undefined): str
             <span class="product-name">${escapeHtml(row.product_label)}</span>
             <span class="product-row-meta">
                 <span class="product-variance">
-                    (${fmtNumber(Math.abs(row.variance_base ?? row.variance ?? 0))} ${escapeHtml(row.unit_shortcut || row.unit_name || "PCS")})
+                    (${fmtNumber(Math.abs(row.variance ?? 0))} ${escapeHtml(row.unit_shortcut || row.unit_name || "PCS")})
                 </span>
             </span>
         </div>
@@ -274,10 +274,12 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
     let adjustedUnresolvedOver = unresolvedOverAmount;
 
     for (const group of offsetGroups) {
-        if (group.difference < 0) {
+        if (group.difference > 0) {
+            // Positive difference (short_total - over_total > 0) means remaining SHORT variance
             adjustedUnresolvedShort += group.difference;
-        } else if (group.difference > 0) {
-            adjustedUnresolvedOver += group.difference;
+        } else if (group.difference < 0) {
+            // Negative difference (short_total - over_total < 0) means remaining OVER variance
+            adjustedUnresolvedOver += Math.abs(group.difference);
         }
     }
 
@@ -829,7 +831,13 @@ export function printPhysicalInventoryOffsettingReport(args: PrintArgs): void {
 
         <div class="report-meta">
             <h2>${escapeHtml(header.ph_no || `PI #${header.id}`)}</h2>
-            <p>Printed: ${fmtDate(new Date().toISOString())}</p>
+            <p>Printed: ${new Date().toLocaleString("en-PH", {
+                year: "numeric",
+                month: "short",
+                day: "2-digit",
+                hour: "numeric",
+                minute: "2-digit",
+            })}</p>
         </div>
     </div>
 

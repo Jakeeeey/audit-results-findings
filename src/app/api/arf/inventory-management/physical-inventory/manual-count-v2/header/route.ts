@@ -102,7 +102,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 : 0,
         };
 
-        const upstream = new URL("/items/physical_inventory_v2", DIRECTUS_BASE_URL);
+        const upstream = new URL("/items/physical_inventory", DIRECTUS_BASE_URL);
 
         const response = await fetch(upstream.toString(), {
             method: "POST",

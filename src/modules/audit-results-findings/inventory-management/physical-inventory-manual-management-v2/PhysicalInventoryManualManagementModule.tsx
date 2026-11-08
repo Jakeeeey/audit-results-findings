@@ -69,13 +69,16 @@ import {
     Ban,
     Boxes,
     ClipboardList,
+    Download,
     Eye,
     EyeOff,
+    FileText,
     Loader2,
     Plus,
     Printer,
     RefreshCcw,
     Search,
+    UploadCloud,
     X,
 } from "lucide-react";
 
@@ -84,8 +87,11 @@ import {
     PhysicalInventoryFilters as PhysicalInventoryFiltersCard,
     PhysicalInventoryHeader,
     PhysicalInventoryTable,
+    PhysicalInventoryUploadCountSheetDialog,
 } from "./components";
 import { printAuditSheet } from "./utils/printAuditSheet";
+import { generateAuditReportPdf } from "./utils/printAuditReportPdf";
+import type jsPDF from "jspdf";
 
 type Props = {
     initialHeaderId?: number | null;
@@ -214,6 +220,10 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
     const [isRebuildingGroups, setIsRebuildingGroups] = React.useState(false);
     const [isSavingDetailBatch, setIsSavingDetailBatch] = React.useState(false);
     const [openAddProductDialog, setOpenAddProductDialog] = React.useState(false);
+    const [openUploadDialog, setOpenUploadDialog] = React.useState(false);
+    const [openAuditReportDialog, setOpenAuditReportDialog] = React.useState(false);
+    const [auditReportBlobUrl, setAuditReportBlobUrl] = React.useState<string | null>(null);
+    const [auditReportDoc, setAuditReportDoc] = React.useState<jsPDF | null>(null);
     const [isToolbarExpanded, setIsToolbarExpanded] = React.useState(false);
 
     const [branches, setBranches] = React.useState<BranchRow[]>([]);
@@ -458,7 +468,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
 
             const params = resolveRunningInventoryFilterParams({
                 branchId: nextFilters.branch_id,
-                supplierId: nextFilters.supplier_id,
+                supplierId: null, // Always fetch branch-wide stock to ensure accurate system counts
                 categoryId: nextFilters.category_id,
                 branches,
                 suppliers,
@@ -503,9 +513,12 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         });
     }, [filters, onRecordChange, rebuildGroupedRows]);
 
-    const flushDirtyDetails = React.useCallback(async () => {
-        if (!header?.id) return;
-        if (!dirtyDetailIdsRef.current.size) return;
+    const flushDirtyDetails = React.useCallback(async (): Promise<{
+        ok: boolean;
+        details: PhysicalInventoryDetailRow[];
+    }> => {
+        if (!header?.id) return { ok: true, details: detailRows };
+        if (!dirtyDetailIdsRef.current.size) return { ok: true, details: detailRows };
 
         const dirtyIds = new Set(dirtyDetailIdsRef.current);
 
@@ -521,7 +534,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
 
         if (!updates.length) {
             dirtyDetailIdsRef.current.clear();
-            return;
+            return { ok: true, details: detailRows };
         }
 
         try {
@@ -539,6 +552,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
 
             const nextHeader = await updatePhysicalInventoryHeader(header.id, {
                 total_amount: sumHeaderTotalAmount(nextDetails),
+                remarks: header.remarks ?? "",
             });
 
             setHeader(nextHeader);
@@ -549,10 +563,12 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 nextHeader,
                 nextFilters: filters,
             });
+            return { ok: true, details: nextDetails };
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "Failed to save physical count batch.";
             toast.error(message);
+            return { ok: false, details: detailRows };
         } finally {
             setIsSavingDetailBatch(false);
         }
@@ -631,7 +647,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
 
                         const params = resolveRunningInventoryFilterParams({
                             branchId,
-                            supplierId,
+                            supplierId: null, // Always fetch branch-wide stock to ensure accurate system counts
                             categoryId,
                             branches: nextBranches,
                             suppliers: nextSuppliers,
@@ -1107,9 +1123,13 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 
                 for (const sibling of familySiblings) {
                     const siblingStock = runningInventoryRows
-                        .filter((r) => r.branch_id === header.branch_id && r.product_id === sibling.product_id)
+                        .filter(
+                            (r) =>
+                                (!r.branch_id || r.branch_id === header.branch_id) &&
+                                r.product_id === sibling.product_id,
+                        )
                         .reduce((acc, r) => acc + (r.running_inventory ?? 0), 0);
-                        
+
                     const systemCount = convertBaseQtyToDisplayQty(siblingStock, sibling.unit_count);
                     systemCountAllocations.set(sibling.product_id, systemCount);
                 }
@@ -1300,6 +1320,22 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         }
     }, [canEdit, detailRows, filters, header?.id, onRecordChange, rebuildGroupedRows]);
 
+    const handleRemarksBlur = React.useCallback(async () => {
+        if (!header?.id || !canEdit) return;
+
+        try {
+            const updatedHeader = await updatePhysicalInventoryHeader(header.id, {
+                remarks: header.remarks ?? "",
+            });
+            setHeader(updatedHeader);
+            onRecordChange?.(updatedHeader);
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "Failed to save header remarks.";
+            toast.error(message);
+        }
+    }, [canEdit, header?.id, header?.remarks, onRecordChange]);
+
     const handleCommit = React.useCallback(async () => {
         if (!header?.id) {
             toast.error("Physical Inventory header is missing.");
@@ -1315,7 +1351,16 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             setIsCommitting(true);
 
             // Flush any pending physical count edits before committing
-            await flushDirtyDetails();
+            const flushResult = await flushDirtyDetails();
+            if (!flushResult.ok) {
+                return;
+            }
+
+            // Persist any latest header remarks before committing
+            await updatePhysicalInventoryHeader(header.id, {
+                remarks: header.remarks ?? "",
+                total_amount: sumHeaderTotalAmount(flushResult.details),
+            });
 
             const committedHeader = await commitPhysicalInventory(header.id);
 
@@ -1323,7 +1368,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
             onRecordChange?.(committedHeader);
 
             rebuildGroupedRows({
-                nextDetails: detailRows,
+                nextDetails: flushResult.details,
                 nextHeader: committedHeader,
                 nextFilters: filters,
             });
@@ -1337,7 +1382,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         } finally {
             setIsCommitting(false);
         }
-    }, [canEdit, detailRows, filters, flushDirtyDetails, header?.id, onRecordChange, rebuildGroupedRows]);
+    }, [canEdit, filters, flushDirtyDetails, header?.id, header?.remarks, onRecordChange, rebuildGroupedRows]);
 
     const canCancelAction =
         Boolean(header?.id) &&
@@ -1459,6 +1504,50 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                             <Printer className="mr-2 h-4 w-4" />
                             Print Audit Sheet
                         </Button>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="cursor-pointer border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40"
+                            onClick={() => {
+                                if (!header) return;
+                                const bName = branches.find((b) => b.id == (filters.branch_id ?? header.branch_id))?.branch_name ?? "";
+                                const sName = suppliers.find((s) => s.id == (filters.supplier_id ?? header.supplier_id))?.supplier_name ?? "";
+                                const pName = priceTypes.find((pt) => pt.price_type_id == (filters.price_type_id ?? header.price_type))?.price_type_name ?? "";
+
+                                const doc = generateAuditReportPdf({
+                                    header,
+                                    groupedRows,
+                                    branchName: bName,
+                                    supplierName: sName,
+                                    priceTypeName: pName,
+                                });
+
+                                if (auditReportBlobUrl) {
+                                    URL.revokeObjectURL(auditReportBlobUrl);
+                                }
+                                const blob = doc.output("blob");
+                                const url = URL.createObjectURL(blob);
+                                setAuditReportBlobUrl(url);
+                                setAuditReportDoc(doc);
+                                setOpenAuditReportDialog(true);
+                            }}
+                            disabled={!hasLoadedDetails || !header?.id}
+                        >
+                            <FileText className="mr-2 h-4 w-4" />
+                            Audit Report
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="cursor-pointer border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-900/60 dark:bg-teal-950/30 dark:text-teal-300 dark:hover:bg-teal-900/40"
+                            onClick={() => setOpenUploadDialog(true)}
+                            disabled={!header?.id}
+                        >
+                            <UploadCloud className="mr-2 h-4 w-4" />
+                            Upload Count Sheet
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -1478,6 +1567,9 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 onChangeRemarks={(value) =>
                     setHeader((prev) => (prev ? { ...prev, remarks: value } : prev))
                 }
+                onBlurRemarks={() => {
+                    void handleRemarksBlur();
+                }}
                 onChangeCutoffDate={(value) =>
                     setHeader((prev) => (prev ? { ...prev, cutOff_date: value } : prev))
                 }
@@ -1920,6 +2012,82 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 existingProductIds={new Set(detailRows.map((d) => d.product_id))}
                 onAdd={handleAddProduct}
             />
+
+            <PhysicalInventoryUploadCountSheetDialog
+                isOpen={openUploadDialog}
+                onOpenChange={setOpenUploadDialog}
+                physicalInventoryId={header?.id || null}
+                phNo={header?.ph_no}
+                canEdit={canEdit}
+                isCommitted={status === "Committed"}
+                currentUserId={currentUser?.id}
+            />
+
+            {/* Audit Report PDF Preview Modal */}
+            <AlertDialog
+                open={openAuditReportDialog}
+                onOpenChange={(open) => {
+                    setOpenAuditReportDialog(open);
+                    if (!open && auditReportBlobUrl) {
+                        URL.revokeObjectURL(auditReportBlobUrl);
+                        setAuditReportBlobUrl(null);
+                        setAuditReportDoc(null);
+                    }
+                }}
+            >
+                <AlertDialogContent
+                    style={{ maxWidth: "80rem" }}
+                    className="w-[92vw] h-[92vh] flex flex-col justify-between rounded-2xl p-6"
+                >
+                    <AlertDialogHeader className="flex flex-row items-center justify-between pb-3 border-b">
+                        <div>
+                            <AlertDialogTitle className="text-lg font-bold tracking-tight">
+                                Physical Inventory Audit Report
+                            </AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs text-muted-foreground">
+                                Preview the generated document format below.
+                            </AlertDialogDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                className="cursor-pointer rounded-xl font-semibold border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 hover:scale-105 active:scale-95 transition-all text-xs"
+                                onClick={() => {
+                                    if (auditReportDoc) {
+                                        const filename = `Physical_Inventory_Audit_Report_${header?.ph_no || header?.id}.pdf`;
+                                        auditReportDoc.save(filename);
+                                    }
+                                }}
+                            >
+                                <Download className="mr-1.5 h-3.5 w-3.5" />
+                                Download PDF
+                            </Button>
+                            <AlertDialogCancel className="cursor-pointer rounded-xl mt-0">
+                                Close
+                            </AlertDialogCancel>
+                        </div>
+                    </AlertDialogHeader>
+
+                    <div className="flex-1 w-full overflow-hidden my-3 rounded-xl border bg-muted/20 relative flex items-center justify-center">
+                        {auditReportBlobUrl ? (
+                            <iframe
+                                src={auditReportBlobUrl}
+                                title="Physical Inventory Audit Report PDF"
+                                className="w-full h-full border-0"
+                            />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                <span>Generating document preview...</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <AlertDialogFooter className="hidden">
+                        <AlertDialogCancel>Close</AlertDialogCancel>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {groupedRows.length > 0 && (
                 <>

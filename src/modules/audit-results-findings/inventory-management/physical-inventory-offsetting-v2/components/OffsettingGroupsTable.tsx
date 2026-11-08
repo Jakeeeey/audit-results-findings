@@ -84,7 +84,7 @@ export function OffsettingGroupsTable({
                                         {new Date(group.created_at.trim().replace(/(?:Z|[+-]\d{2}:?\d{2})$/i, "")).toLocaleString("en-PH")}
                                     </p>
                                 </div>
-                                {isPending && (
+                                {isPending && isGroupUnsaved && (
                                     <div className="flex items-center gap-1">
                                         <Button
                                             variant="ghost"
@@ -232,12 +232,12 @@ export function OffsettingGroupsTable({
                                         </span>
                                     </div>
                                     <Textarea
-                                        placeholder="Enter offset group remarks..."
+                                        placeholder={isGroupUnsaved ? "Enter offset group remarks..." : "No remarks entered."}
                                         value={group.remarks || ""}
                                         onChange={(e) => onChangeGroupRemarks?.(group.id, e.target.value)}
-                                        disabled={disabled || !isPending}
+                                        disabled={disabled || !isPending || !isGroupUnsaved}
                                         rows={2}
-                                        className="text-xs min-h-[56px] resize-y bg-background break-words"
+                                        className="text-xs min-h-[56px] resize-y bg-background break-words disabled:opacity-75 disabled:cursor-not-allowed"
                                     />
                                 </div>
                             </div>
