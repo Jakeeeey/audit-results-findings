@@ -60,37 +60,42 @@ export async function fetchPhysicalInventoryListRows(): Promise<{
                 isComitted: normalizedIsComitted,
             });
 
+            const branchIdNum = header.branch_id ? Number(header.branch_id) : null;
+            const supplierIdNum = header.supplier_id ? Number(header.supplier_id) : null;
+            const categoryIdNum = header.category_id ? Number(header.category_id) : null;
+            const priceTypeNum = header.price_type ? Number(header.price_type) : null;
+
             return {
                 id: header.id,
                 ph_no: header.ph_no,
                 date_encoded: header.date_encoded,
                 cutOff_date: header.cutOff_date,
                 starting_date: header.starting_date,
-                price_type: header.price_type,
+                price_type: priceTypeNum,
                 stock_type: header.stock_type,
-                branch_id: header.branch_id,
+                branch_id: branchIdNum,
                 remarks: header.remarks,
                 isComitted: normalizedIsComitted,
                 isCancelled: normalizedIsCancelled,
                 total_amount: header.total_amount,
-                supplier_id: header.supplier_id,
-                category_id: header.category_id,
+                supplier_id: supplierIdNum,
+                category_id: categoryIdNum,
                 encoder_id:
                     typeof header.encoder_id === "object" && header.encoder_id !== null
                         ? header.encoder_id.user_id
                         : header.encoder_id,
 
-                branch_name: header.branch_id
-                    ? branchMap.get(header.branch_id)?.branch_name ?? null
+                branch_name: branchIdNum
+                    ? branchMap.get(branchIdNum)?.branch_name ?? null
                     : null,
-                supplier_name: header.supplier_id
-                    ? supplierMap.get(header.supplier_id)?.supplier_name ?? null
+                supplier_name: supplierIdNum
+                    ? supplierMap.get(supplierIdNum)?.supplier_name ?? null
                     : null,
-                category_name: header.category_id
-                    ? categoryMap.get(header.category_id)?.category_name ?? null
+                category_name: categoryIdNum
+                    ? categoryMap.get(categoryIdNum)?.category_name ?? null
                     : null,
-                price_type_name: header.price_type
-                    ? priceTypeMap.get(header.price_type)?.price_type_name ?? null
+                price_type_name: priceTypeNum
+                    ? priceTypeMap.get(priceTypeNum)?.price_type_name ?? null
                     : null,
                 status,
             };

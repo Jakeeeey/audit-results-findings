@@ -139,6 +139,30 @@ export type PhysicalInventoryDetailRFIDRow = {
     created_by: number | null;
 };
 
+export type PhysicalInventoryAttachmentFileDetails = {
+    id: string;
+    filename_download: string;
+    title?: string | null;
+    type?: string | null;
+    filesize?: number | null;
+};
+
+export type PhysicalInventoryAttachmentRow = {
+    id: number;
+    physical_inventory_id: number;
+    directus_file_id: string;
+    created_by:
+        | number
+        | {
+            user_id: number;
+            user_fname: string | null;
+            user_lname: string | null;
+        }
+        | null;
+    created_at: string;
+    file_details?: PhysicalInventoryAttachmentFileDetails | null;
+};
+
 export type PhysicalInventoryHeaderUpsertPayload = {
     ph_no?: string | null;
     cutOff_date: string | null;
