@@ -6,14 +6,14 @@ export class SopAccessError extends Error {
 }
 
 export async function authorizeSop(req: { cookies: { get(name: string): { value: string } | undefined } }) {
-    if (process.env.SOP_SAFETY_ENVIRONMENT !== 'dummy' || !process.env.SPRING_API_BASE_URL) throw new SopAccessError(503, 'SOP is disabled. Confirm the configured Spring backend is VOS Dummy.');
-    const token = req.cookies.get(COOKIE_NAME)?.value;
-    if (!token) throw new SopAccessError(401, 'Please sign in.');
+    if (!process.env.SPRING_API_BASE_URL) throw new SopAccessError(503, 'SOP backend is not configured. Set SPRING_API_BASE_URL.');
     let base: URL;
     try {
-        base = new URL(process.env.SPRING_API_BASE_URL);
+        base = new URL(process.env.SPRING_API_BASE_URL.endsWith('/') ? process.env.SPRING_API_BASE_URL : `${process.env.SPRING_API_BASE_URL}/`);
         if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== '/') throw new Error();
-    } catch { throw new SopAccessError(503, 'Configure a valid Dummy backend origin.'); }
+    } catch { throw new SopAccessError(503, 'Configure a valid SOP backend origin.'); }
+    const token = req.cookies.get(COOKIE_NAME)?.value;
+    if (!token) throw new SopAccessError(401, 'Please sign in.');
     const fetchSop = (path: string, init: RequestInit = {}) => {
         const url = new URL(path, base);
         if (url.origin !== base.origin) throw new SopAccessError(400, 'Invalid upstream origin.');
@@ -34,7 +34,7 @@ export async function authorizeSop(req: { cookies: { get(name: string): { value:
         if (roles.length === 0) throw new SopAccessError(403, 'SOP role access has not been granted.');
     }
     const capabilities = sopCapabilities(roles);
-    return { fetchSop, roles, capabilities, requireCapability(capability: SopCapability) {
+    return { fetchSop, roles, capabilities, userId: String(claims.sub), requireCapability(capability: SopCapability) {
         if (!capabilities[capability]) throw new SopAccessError(403, capability === 'managePlanning' ? 'Planner access is required to manage SOP checklists and schedules.' : capability === 'inspect' ? 'Inspector access is required to change audits, corrective actions, or evidence.' : 'Planner or Inspector access is required to read SOP audits and results.');
     } };
 }

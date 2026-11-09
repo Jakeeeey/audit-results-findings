@@ -1,3 +1,3 @@
 import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
-export default function Page() { redirect('/arf/housekeeping/auditor'); }
+export default function Page() { redirect('/arf/housekeeping/checker'); }

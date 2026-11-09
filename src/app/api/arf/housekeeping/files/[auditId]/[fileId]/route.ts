@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { COOKIE_NAME } from '@/lib/auth-utils';
 import { normalizePhoto } from '@/modules/audit-results-findings/housekeeping/server/image-processing';
 import { attachmentRow, auditRow } from '@/modules/audit-results-findings/housekeeping/spring/workflow';
+import { authorizeHousekeeping, authorizeChecker, checkerError } from '@/modules/audit-results-findings/housekeeping/checker/server/access';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
@@ -28,11 +29,18 @@ async function handle(req: NextRequest, context: { params: Promise<{ auditId: st
     const options = { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' as const, redirect: 'manual' as const, signal: AbortSignal.timeout(20000) };
     let uploadedId: string | undefined;
     try {
+        const roleAccess = await authorizeHousekeeping(req);
+        if (req.method === 'POST') roleAccess.requireRole('auditor');
+        else roleAccess.requireRole('auditor', 'checker', 'scheduler');
         const access = await fetch(`${spring.replace(/\/$/, '')}/api/housekeeping/audits/${auditId}`, options);
         if (!access.ok) return failure('Audit access was denied or the audit is unavailable.', access.status >= 300 && access.status < 400 ? 502 : access.status);
         const detail: unknown = await access.json();
         const parsed = z.object({ audit: auditRow }).safeParse(detail);
         if (!parsed.success || parsed.data.audit.id !== Number(auditId)) return failure('Unexpected audit response.', 502);
+        if (req.method === 'GET' && !roleAccess.roles.some(role => role === 'auditor' || role === 'scheduler')) {
+            const checker = await authorizeChecker(req); checker.requireWarehouse(parsed.data.audit.branchId);
+            if (parsed.data.audit.status !== 'Submitted') return failure('Checker evidence is available only for submitted audits.', 403);
+        }
         if (req.method === 'GET') {
             const result = await fetch(`${spring.replace(/\/$/, '')}/api/housekeeping/audits/${auditId}/attachments`, options);
             if (!result.ok) return failure('Attachment access denied.', result.status >= 300 && result.status < 400 ? 502 : result.status);
@@ -70,7 +78,10 @@ async function handle(req: NextRequest, context: { params: Promise<{ auditId: st
             return failure(`Photo stored as ${stored.data.data.id}, but its audit link was not confirmed. Reload attachments before retrying; retain this UUID for administrator reconciliation.`, 502);
         }
         return NextResponse.json({ success: true }, { headers: noStore });
-    } catch { return failure(uploadedId ? `Photo stored as ${uploadedId}, but its audit link was not confirmed. Reload attachments before retrying; retain this UUID for administrator reconciliation.` : 'File request failed. Reload attachments to confirm state before retrying an upload.', 502); }
+    } catch (cause) {
+        if (cause && typeof cause === 'object' && 'status' in cause && typeof cause.status === 'number') { const result = checkerError(cause); return failure(result.message, result.status); }
+        return failure(uploadedId ? `Photo stored as ${uploadedId}, but its audit link was not confirmed. Reload attachments before retrying; retain this UUID for administrator reconciliation.` : 'File request failed. Reload attachments to confirm state before retrying an upload.', 502);
+    }
 }
 export const GET = handle;
 export const POST = handle;

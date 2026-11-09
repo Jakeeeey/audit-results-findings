@@ -6,15 +6,17 @@ import { useSopResource } from '../hooks/useSopResource';
 import { readSop } from '../services/sopClient';
 import { SopError, SopLoading } from './SopShared';
 
-const accessSchema = z.object({ roles: z.array(z.enum(sopRoles)).min(1) });
+const accessSchema = z.object({ roles: z.array(z.enum(sopRoles)).min(1), userId: z.string().optional() });
+const SopUserContext = createContext<string | undefined>(undefined);
 const SopAccessContext = createContext<readonly SopRole[]>([]);
 const SopReadOnlyContext = createContext(false);
 export function useSopAccess(workspace?: SopRole) {
     const roles = useContext(SopAccessContext);
     const readOnly = useContext(SopReadOnlyContext);
+    const userId = useContext(SopUserContext);
     const scope = workspace ? roles.filter(role => role === workspace) : roles;
     const capabilities = sopCapabilities(scope);
-    return { roles, ...capabilities, inspect: !readOnly && capabilities.inspect, managePlanning: !readOnly && capabilities.managePlanning };
+    return { roles, userId, ...capabilities, resolveAssignedActions: !readOnly && capabilities.resolveAssignedActions, inspect: !readOnly && capabilities.inspect, managePlanning: !readOnly && capabilities.managePlanning };
 }
 export function SopReadOnlyScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
     const inherited = useContext(SopReadOnlyContext);
@@ -29,5 +31,5 @@ export function SopAccessProvider({ children }: { children: ReactNode }) {
     const resource = useSopResource('sop-access', signal => readSop('access', accessSchema, undefined, signal));
     if (resource.loading) return <SopLoading />;
     if (!resource.data) return <SopError error={resource.error} retry={resource.reload} />;
-    return <SopAccessContext.Provider value={resource.data.roles}>{children}</SopAccessContext.Provider>;
+    return <SopUserContext.Provider value={resource.data.userId}><SopAccessContext.Provider value={resource.data.roles}>{children}</SopAccessContext.Provider></SopUserContext.Provider>;
 }

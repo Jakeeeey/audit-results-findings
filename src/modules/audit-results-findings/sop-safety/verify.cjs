@@ -116,10 +116,7 @@ async function main() {
     const api = load('src/app/api/arf/sop-safety/[...path]/route.ts');
     assert.equal((await api.GET(req(), context('checklists'))).status, 503);
     assert.equal(calls.length, 0);
-    env.SOP_SAFETY_ENVIRONMENT = 'dummy'; env.SPRING_API_BASE_URL = 'https://dummy.example.test';
-    env.SOP_SAFETY_ENVIRONMENT = 'live';
-    assert.equal((await api.GET(req(), context('checklists'))).status, 503);
-    env.SOP_SAFETY_ENVIRONMENT = 'dummy';
+    env.SPRING_API_BASE_URL = 'https://dummy.example.test';
     const missing = req(); missing.cookies.get = () => undefined;
     assert.equal((await api.GET(missing, context('checklists'))).status, 401);
     assert.equal((await api.POST(req('POST', create, 'https://evil.test'), context('audits'))).status, 403);
@@ -130,7 +127,7 @@ async function main() {
     grants = [{ userId: 7, subsystemSlug: 'arf', basePath: '/arf/sop-safety' }];
     assert.equal((await api.GET(req(), context('checklists'))).status, 403, 'Parent/folder access is not a role');
     grants = [{ userId: 7, subsystemSlug: 'arf', basePath: '/arf/sop-safety/viewer' }];
-    assert.equal((await api.GET(req(), context('checklists'))).status, 403, 'Retired Viewer grants do not become Planner or Inspector grants');
+    assert.equal((await api.GET(req(), context('checklists'))).status, 200, 'Viewer has read access without planning mutation access');
     grants = [{ userId: 7, subsystemSlug: 'arf', basePath: '/arf/sop-safety/planner' }];
     handler = () => Response.json([checklist]);
     assert.equal((await (await api.GET(req(), context('checklists'))).json())[0].id, 1);
@@ -149,9 +146,9 @@ async function main() {
 
     // Business-role authorization is enforced before forwarding any protected operation.
     const permissions = load(`${feature}/permissions.ts`);
-    assert.equal(permissions.sopRoles.join(','), 'PLANNER,INSPECTOR');
-    assert.equal(fs.existsSync('src/app/(audit-results-findings)/arf/sop-safety/viewer/[[...section]]/page.tsx'), false);
-    assert.equal(fs.existsSync('src/app/(audit-results-findings)/arf/sop-safety/viewer/audits/[id]/page.tsx'), false);
+    assert.equal(permissions.sopRoles.join(','), 'PLANNER,INSPECTOR,VIEWER');
+    assert.equal(fs.existsSync('src/app/(audit-results-findings)/arf/sop-safety/viewer/[[...section]]/page.tsx'), true);
+    assert.equal(fs.existsSync('src/app/(audit-results-findings)/arf/sop-safety/viewer/audits/[id]/page.tsx'), true);
     assert.equal(permissions.rolesFromSopGrants([{ userId: 8, subsystemSlug: 'arf', basePath: '/arf/sop-safety/inspector' }], '7').length, 0);
     const setRoles = roles => { role = 'USER'; grants = roles.map(name => ({ userId: 7, subsystemSlug: 'arf', basePath: permissions.sopRolePaths[name] })); };
     const operationCalls = () => calls.filter(call => call.url.origin === 'https://dummy.example.test' && call.url.pathname.startsWith('/api/sop-safety/')).length;
@@ -182,6 +179,22 @@ async function main() {
         assert.equal((await api.GET(req(), context('schedules'))).status, 200);
     }
     setRoles(['PLANNER', 'INSPECTOR']);
+    setRoles(['VIEWER']);
+    handler = () => Response.json({ actions: [{ id: 1, description: 'Assigned finding', assignedTo: 7, status: 'Open' }], total: 1, page: 1, pageSize: 25 });
+    assert.equal((await api.POST(req('POST', {}), context('corrective-actions/1/done'))).status, 200);
+    assert.equal((await api.POST(req('POST', {}), context('corrective-actions/2/done'))).status, 403);
+    assert.equal((await api.PUT(req('PUT', [{ itemId: 1, grade: 0 }]), context('audits/12/grades'))).status, 403);
+    assert.equal((await api.POST(req('POST', create), context('audits'))).status, 403);
+    handler = () => Response.json({ actions: [{ id: 1, description: 'Other user', assignedTo: 8, status: 'Open' }], total: 1, page: 1, pageSize: 25 });
+    assert.equal((await api.POST(req('POST', {}), context('corrective-actions/1/cancel'))).status, 403);
+    handler = () => Response.json({ actions: [{ id: 3, description: 'Unassigned finding', assignedTo: null, status: 'Open' }], total: 1, page: 1, pageSize: 25 });
+    const beforeUnassigned = calls.length;
+    assert.equal((await api.POST(req('POST', {}), context('corrective-actions/3/done'))).status, 200, 'Viewer may update an unassigned Open corrective action');
+    const assignmentRead = calls.slice(beforeUnassigned).find(call => call.url.pathname === '/api/sop-safety/corrective-actions');
+    assert.equal(assignmentRead.url.searchParams.get('status'), 'Open');
+    assert.equal(assignmentRead.url.searchParams.has('assignedTo'), false, 'Server checks all Open actions, including unassigned actions');
+    handler = () => Response.json({ confirmed: true });
+    setRoles(['PLANNER', 'INSPECTOR']);
     const accessApi = load('src/app/api/arf/sop-safety/access/route.ts');
     const assignedAccess = await (await accessApi.GET(req())).json();
     assert.equal(assignedAccess.roles.join(','), 'PLANNER,INSPECTOR');
@@ -190,6 +203,11 @@ async function main() {
     assert.equal((await accessApi.GET(req('GET', undefined, 'https://arf.example.test', '?role=PLANNER'))).status, 400, 'Browser cannot select role grants');
     for (const [method, resource, body] of cases) assert.equal((await api[method](req(method, body), context(resource))).status, 200);
     const { SopRoleGate } = load(`${feature}/server/SopRoleGate.tsx`);
+    setRoles(['VIEWER']);
+    assert.equal(await SopRoleGate({ role: 'VIEWER', children: 'warehouse results' }), 'warehouse results');
+    await assert.rejects(SopRoleGate({ role: 'INSPECTOR', children: 'grading' }), /REDIRECT:\/main-dashboard/);
+    assert.equal(permissions.sopEntryPath(['VIEWER'], 'overview'), '/arf/sop-safety/viewer/overview');
+    assert.equal(permissions.sopEntryPath(['VIEWER'], 'checklists'), null);
     setRoles(['INSPECTOR']);
     assert.equal(await SopRoleGate({ role: 'INSPECTOR', children: 'inspection view' }), 'inspection view');
     await assert.rejects(SopRoleGate({ role: 'PLANNER', children: 'private planning view' }), /REDIRECT:\/main-dashboard/);

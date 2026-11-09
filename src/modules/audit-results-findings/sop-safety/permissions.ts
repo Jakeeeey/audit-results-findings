@@ -1,14 +1,19 @@
 /** Roles are assigned through approved VOS module grants, never by a browser toggle. */
-export const sopRoles = ['PLANNER', 'INSPECTOR'] as const;
+export const sopRoles = ['PLANNER', 'INSPECTOR', 'VIEWER'] as const;
 export type SopRole = typeof sopRoles[number];
-export type SopCapability = 'readPlanning' | 'managePlanning' | 'readAudits' | 'inspect';
+export function sopResultWorkspace(roles: readonly SopRole[]) {
+    return roles.includes('INSPECTOR') ? 'inspector' : roles.includes('PLANNER') ? 'planner' : 'viewer';
+}
+export type SopCapability = 'readPlanning' | 'managePlanning' | 'readAudits' | 'inspect' | 'resolveAssignedActions';
 export const sopRolePaths: Record<SopRole, string> = {
     PLANNER: '/arf/sop-safety/planner',
     INSPECTOR: '/arf/sop-safety/inspector',
+    VIEWER: '/arf/sop-safety/viewer',
 };
 export const sopWorkspaceScreens: Record<SopRole, readonly string[]> = {
     PLANNER: ['overview', 'audits', 'checklists', 'corrective-actions', 'schedules'],
     INSPECTOR: ['overview', 'audits', 'checklists', 'corrective-actions', 'schedules'],
+    VIEWER: ['overview', 'audits', 'corrective-actions'],
 };
 export function sopCapabilities(roles: readonly SopRole[]) {
     return {
@@ -16,12 +21,13 @@ export function sopCapabilities(roles: readonly SopRole[]) {
         managePlanning: roles.includes('PLANNER'),
         readAudits: roles.length > 0,
         inspect: roles.includes('INSPECTOR'),
+        resolveAssignedActions: roles.includes('VIEWER'),
     };
 }
 
 /** Shared/bookmarked URLs select an authorized view; they never grant another role. */
 export function sopEntryPath(roles: readonly SopRole[], screen: string, auditId?: number): string | null {
-    const role = roles.includes('INSPECTOR') ? 'INSPECTOR' : roles.includes('PLANNER') ? 'PLANNER' : null;
+    const role = roles.includes('INSPECTOR') ? 'INSPECTOR' : roles.includes('PLANNER') ? 'PLANNER' : roles.includes('VIEWER') ? 'VIEWER' : null;
     if (!role || !sopWorkspaceScreens[role].includes(screen)) return null;
     if (auditId !== undefined && (screen !== 'audits' || !Number.isSafeInteger(auditId) || auditId <= 0)) return null;
     return `${sopRolePaths[role]}/${screen}${auditId !== undefined ? `/${auditId}` : ''}`;

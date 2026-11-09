@@ -3,7 +3,8 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { COOKIE_NAME } from '@/lib/auth-utils';
-import { canonicalHousekeepingPath, LEGACY_HOUSEKEEPING_SLUG } from '../paths';
+import { LEGACY_HOUSEKEEPING_SLUG } from '../paths';
+import { housekeepingRoles } from '../checker/permissions';
 import { EvaluationError, moduleAccess, secureEndpoint, verifySession } from './security';
 import { saveReadiness, weeklyReadiness, submissionReadiness } from './save-readiness';
 import { evaluationToken } from './configuration';
@@ -25,9 +26,8 @@ export async function currentAccess() {
         let rows: z.infer<typeof item>[];
         try { const body: unknown = await response.json(); rows = z.union([z.array(item), z.object({ data: z.array(item) }).transform(v => v.data)]).parse(body); }
         catch { throw new EvaluationError(503, 'AUTHORIZATION_UNAVAILABLE', 'Module access response could not be validated'); }
-        const root = '/arf/housekeeping';
-        if (!rows.some(row => row.userId === actor.userId && row.subsystemSlug === 'arf' && (!row.status || row.status.toLowerCase() === 'active') &&
-            (row.slug === 'housekeeping' || row.slug === LEGACY_HOUSEKEEPING_SLUG || (row.basePath && (canonicalHousekeepingPath(row.basePath) === root || canonicalHousekeepingPath(row.basePath).startsWith(`${root}/`)))))) {
+        const legacyParentGrant = rows.some(row => row.userId === actor.userId && row.subsystemSlug === 'arf' && (!row.status || row.status.toLowerCase() === 'active') && !row.basePath && ['housekeeping', LEGACY_HOUSEKEEPING_SLUG].includes(row.slug ?? ''));
+        if (!legacyParentGrant && !housekeepingRoles(rows, actor.userId).some(role => role === 'auditor' || role === 'scheduler')) {
             throw new EvaluationError(403, 'FORBIDDEN', 'You have not been granted access to the evaluation module');
         }
     }

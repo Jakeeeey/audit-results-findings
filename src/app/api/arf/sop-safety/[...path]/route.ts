@@ -3,6 +3,7 @@ import { sopPath, sopQuery } from '@/modules/audit-results-findings/sop-safety/s
 import { authorizeSop, SopAccessError } from '@/modules/audit-results-findings/sop-safety/server/access';
 import { validateSopWrite } from '@/modules/audit-results-findings/sop-safety/schemas/write.schema';
 import { sopOperationCapability } from '@/modules/audit-results-findings/sop-safety/permissions';
+import { pageSchema, actionSchema } from '@/modules/audit-results-findings/sop-safety/schemas/response.schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,8 +30,26 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
         }
     } catch (cause) { return error(cause instanceof Error ? cause.message : 'Invalid request.', 400); }
     try {
-        const { fetchSop, requireCapability } = await authorizeSop(req);
-        requireCapability(sopOperationCapability(req.method, resource));
+        const { fetchSop, requireCapability, capabilities, userId } = await authorizeSop(req);
+        if (req.method === 'POST' && /^corrective-actions\/[1-9]\d*\/(done|cancel)$/.test(resource) && !capabilities.inspect && capabilities.resolveAssignedActions) {
+            // Verify assignment with the current server identity. Viewers may also
+            // update unassigned Open actions; assignments to another user stay protected.
+            const assigned = await fetchSop('/api/sop-safety/corrective-actions?status=Open&page=1&pageSize=25');
+            if (!assigned.ok) return error('Unable to verify corrective-action assignment.', 403);
+            const schema = pageSchema('actions', actionSchema);
+            let result = schema.parse(await assigned.json());
+            const actionId = Number(path[1]);
+            const canUpdate = (action: typeof result.actions[number]) => action.id === actionId && action.status === 'Open' && (action.assignedTo == null || String(action.assignedTo) === userId);
+            let found = result.actions.some(canUpdate);
+            let page = 1;
+            while (!found && page * result.pageSize < result.total) {
+                const response = await fetchSop(`/api/sop-safety/corrective-actions?status=Open&page=${++page}&pageSize=25`);
+                if (!response.ok) return error('Unable to verify corrective-action assignment.', 403);
+                result = schema.parse(await response.json());
+                found = result.actions.some(canUpdate);
+            }
+            if (!found) return error('Only unassigned Open actions or actions assigned to you may be updated.', 403);
+        } else requireCapability(sopOperationCapability(req.method, resource));
         const response = await fetchSop(`${target}${!writing && query.size ? `?${query}` : ''}`, {
             method: req.method,
             ...(payload !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) } : {}),

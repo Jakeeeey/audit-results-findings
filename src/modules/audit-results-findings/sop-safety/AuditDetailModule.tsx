@@ -9,7 +9,7 @@ import { SopError } from './components/SopShared';
 import { sopRolePaths, type SopRole } from './permissions';
 
 export function AuditDetailModule({ id, readOnly = false, workspace }: { id: number; readOnly?: boolean; workspace: SopRole }) {
-    return <SopWorkspaceScope workspace={workspace}><AuditDetailBody id={id} workspace={workspace} readOnly={workspace === 'PLANNER' || readOnly} /></SopWorkspaceScope>;
+    return <SopWorkspaceScope workspace={workspace}><AuditDetailBody id={id} workspace={workspace} readOnly={workspace !== 'INSPECTOR' || readOnly} /></SopWorkspaceScope>;
 }
 
 function AuditDetailBody({ id, readOnly, workspace }: { id: number; readOnly: boolean; workspace: SopRole }) {

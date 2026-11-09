@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { COOKIE_NAME } from '@/lib/auth-utils';
 import { springHousekeepingPath, springHousekeepingQuery } from '@/modules/audit-results-findings/housekeeping/spring/routes';
 import { validateSpringWrite } from '@/modules/audit-results-findings/housekeeping/spring/write-contracts';
+import { authorizeHousekeeping, checkerError } from '@/modules/audit-results-findings/housekeeping/checker/server/access';
+import { handleCheckerRequest } from '@/modules/audit-results-findings/housekeeping/checker/server/handler';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,8 +15,15 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
     const token = req.cookies.get(COOKIE_NAME)?.value;
     if (!token) return error('Please sign in to access Housekeeping.', 401);
     const { path } = await context.params;
+    if (path[0] === 'checker') return handleCheckerRequest(req, path.slice(1));
     const target = springHousekeepingPath(path, method);
     if (!target) return error('Housekeeping resource not found.', 404);
+    try {
+        const access = await authorizeHousekeeping(req);
+        if (method === 'GET') access.requireRole('auditor', 'scheduler');
+        else if (['checklists', 'items', 'schedule-rules', 'schedules'].includes(path[0])) access.requireRole('scheduler');
+        else access.requireRole('auditor');
+    } catch (cause) { const result = checkerError(cause); return error(result.message, result.status); }
     let query: URLSearchParams;
     try { query = springHousekeepingQuery(path.join('/'), req.nextUrl.searchParams); }
     catch (e) { return error(e instanceof Error ? e.message : 'Invalid filters.', 400); }

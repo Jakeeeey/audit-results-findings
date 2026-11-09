@@ -5,5 +5,5 @@ export const dynamic = 'force-dynamic';
 
 /** The existing module registry points to this parent path. */
 export default function Page() {
-    redirect('/arf/housekeeping/auditor');
+    redirect('/arf/housekeeping/checker');
 }

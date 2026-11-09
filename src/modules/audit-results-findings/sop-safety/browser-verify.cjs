@@ -28,7 +28,7 @@ async function main() {
         import {AuditDetailModule} from './src/modules/audit-results-findings/sop-safety/AuditDetailModule';
         import {SopAccessProvider} from './src/modules/audit-results-findings/sop-safety/components/SopAccessProvider';
         const match=location.pathname.match(/audits\\/(\\d+)$/);
-        const workspace=location.pathname.includes('/planner')?'PLANNER':'INSPECTOR';
+        const workspace=location.pathname.includes('/viewer')?'VIEWER':location.pathname.includes('/planner')?'PLANNER':'INSPECTOR';
         const last=location.pathname.split('/').at(-1);
         const tab=['overview','audits','checklists','corrective-actions','schedules'].includes(last)?last:workspace==='PLANNER'?'checklists':'audits';
         createRoot(document.getElementById('root')).render(<SopAccessProvider>{match?<AuditDetailModule id={Number(match[1])} workspace={workspace} readOnly={workspace==='PLANNER'}/>:<SopSafetyModule initialTab={tab} workspace={workspace}/>}</SopAccessProvider>);`, resolveDir: root, loader: 'tsx', sourcefile: 'sop-browser-test.tsx' }, bundle: true, write: false, platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"development"' }, tsconfig: path.join(root, 'tsconfig.json'), plugins: [{ name: 'next-test-navigation', setup(builder) {
@@ -42,8 +42,7 @@ async function main() {
         if (url.pathname === '/style.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); return res.end(css.css); }
         if (!url.pathname.startsWith('/api/')) {
             // Mirror the separately unit-tested shared-entry redirect for this isolated server.
-            if (/^\/arf\/sop-safety\/viewer(?:\/|$)/.test(url.pathname)) { res.writeHead(404); return res.end('Not found'); }
-            if (url.pathname.startsWith('/arf/sop-safety') && !/^\/arf\/sop-safety\/(planner|inspector)(?:\/|$)/.test(url.pathname)) {
+            if (url.pathname.startsWith('/arf/sop-safety') && !/^\/arf\/sop-safety\/(planner|inspector|viewer)(?:\/|$)/.test(url.pathname)) {
                 const role = assignedRoles.includes('INSPECTOR') ? 'inspector' : 'planner';
                 const suffix = url.pathname.slice('/arf/sop-safety'.length).replace(/^\//, '') || 'overview';
                 res.writeHead(302, { Location: `/arf/sop-safety/${role}/${suffix}` }); return res.end();
@@ -70,7 +69,7 @@ async function main() {
         if (req.method !== 'GET') mutations.push({ resource, method: req.method, body });
         if (req.method === 'GET') {
             reads.push({ resource, query: Object.fromEntries(url.searchParams) });
-            if (resource === 'access') return send({ roles: assignedRoles });
+            if (resource === 'access') return send({ roles: assignedRoles, userId: '370' });
             if (resource === 'checklists') return send([checklist]);
             if (resource === 'checklists/1') return send({ checklist, items });
             if (resource === 'audits') return denyAudits ? send({ message: 'SOP permission denied' }, 403) : send(pageOf('audits', audits.filter(row => !url.searchParams.has('status') || row.status === url.searchParams.get('status'))));
@@ -175,7 +174,9 @@ async function main() {
         assert.equal(await page.getByRole('button', { name: 'Save draft', exact: true }).count(), 0);
         await page.getByRole('button', { name: 'Add action', exact: true }).click();
         await page.getByLabel('Corrective action *').fill('Fix PPE compliance');
-        await select('Assignee', 'Test Auditor'); await confirm();
+        await confirm();
+        await page.getByRole('dialog', { name: 'Add corrective action', exact: true }).waitFor({ state: 'hidden' });
+        assert.equal(actions.at(-1).assignedTo, null, 'Inspector may create corrective actions without an assignee');
         await page.getByText('Fix PPE compliance', { exact: true }).first().waitFor();
         await page.getByRole('button', { name: 'Done', exact: true }).click(); await confirm();
         await page.getByText('Done', { exact: true }).waitFor();
@@ -222,6 +223,7 @@ async function main() {
         assert.equal(await page.getByText('Emergency numbers posted', { exact: true }).count(), 1, 'Only one item list is shown');
         await page.getByRole('button', { name: 'Edit Emergency numbers posted', exact: true }).click();
         await page.getByLabel('Weight *', { exact: true }).fill('2'); await confirm();
+        await page.getByRole('dialog', { name: 'Edit checklist item', exact: true }).waitFor({ state: 'hidden' });
         await page.getByText('Emergency numbers posted', { exact: true }).waitFor();
         assert.equal(items.find(item => item.description === 'Emergency numbers posted').weight, 2);
         await page.setViewportSize({ width: 390, height: 844 });
@@ -298,8 +300,41 @@ async function main() {
         await page.goto(`${base}/arf/sop-safety`);
         await sectionResult();
         assert.ok(page.url().endsWith('/planner/overview'));
-        const removedView = await page.goto(`${base}/arf/sop-safety/viewer`);
-        assert.equal(removedView.status(), 404);
+        assignedRoles = ['VIEWER'];
+        audits[0].status = 'Submitted';
+        await page.goto(`${base}/arf/sop-safety/viewer/overview`);
+        await sectionResult();
+        assert.equal(await page.getByRole('link', { name: 'Checklists', exact: true }).count(), 0);
+        assert.equal(await page.getByRole('link', { name: 'Schedules', exact: true }).count(), 0);
+        assert.equal(await page.getByRole('button', { name: 'New audit', exact: true }).count(), 0);
+        await select('Warehouse', 'Alaminos - Bad Stock');
+        await sectionResult();
+        assert.equal(reads.filter(row => row.resource === 'kpi').at(-1).query.branchId, '280');
+        await page.getByRole('link', { name: 'Audit results', exact: true }).click();
+        await page.getByRole('link', { name: 'View audit', exact: true }).click();
+        assert.ok(page.url().includes('/viewer/audits/12'));
+        await page.getByText('60.00%', { exact: true }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Cancel audit', exact: true }).count(), 0);
+        assert.equal(await page.getByRole('button', { name: 'Link existing file', exact: true }).count(), 0);
+        actions.push({ id: 800, auditId: 12, description: 'Viewer assigned action', assignedTo: 370, status: 'Open' }, { id: 801, auditId: 12, description: 'Other user action', assignedTo: 999, status: 'Open' }, { id: 803, auditId: 12, description: 'Unassigned action', assignedTo: null, status: 'Open' });
+        await page.goto(`${base}/arf/sop-safety/viewer/corrective-actions`);
+        const ownAction = page.getByRole('row').filter({ hasText: 'Viewer assigned action' });
+        await ownAction.getByRole('button', { name: 'Update status', exact: true }).click();
+        await page.getByRole('dialog', { name: 'Update corrective-action status' }).waitFor();
+        await confirm();
+        await ownAction.getByText('Done', { exact: true }).waitFor();
+        assert.equal(await page.getByRole('row').filter({ hasText: 'Other user action' }).getByRole('button').count(), 0);
+        assert.equal(await page.getByRole('row').filter({ hasText: 'Unassigned action' }).getByRole('button', { name: 'Update status', exact: true }).count(), 1, 'Viewer can update an unassigned Open action');
+        assert.equal(await page.getByRole('button', { name: 'Edit', exact: true }).count(), 0);
+        actions.push({ id: 802, auditId: 12, description: 'Dashboard open case', assignedTo: 370, status: 'Open', dueDate: '2020-01-01' });
+        await page.goto(`${base}/arf/sop-safety/viewer/overview`);
+        const openCases = page.getByRole('region', { name: 'Open corrective cases' });
+        await openCases.getByText('Dashboard open case', { exact: true }).waitFor();
+        assert.equal(await openCases.getByText('Viewer assigned action', { exact: true }).count(), 0, 'Completed actions are excluded from dashboard open cases');
+        await openCases.getByText('Overdue', { exact: true }).waitFor();
+        await openCases.getByRole('row').filter({ hasText: 'Dashboard open case' }).getByRole('button', { name: 'Update status', exact: true }).click();
+        await select('New status', 'Cancelled — action withdrawn'); await confirm();
+        await page.waitForFunction(() => !document.body.textContent.includes('Dashboard open case'));
         assignedRoles = ['INSPECTOR'];
         audits[0].status = 'Draft';
         await page.route('**/api/arf/sop-safety/audits/12/grades', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'Simulated save failure' }) }));
@@ -310,7 +345,7 @@ async function main() {
         assert.equal(await page.getByRole('button', { name: 'Save draft', exact: true }).isDisabled(), true);
         assert.equal(grades.find(grade => grade.itemId === 1).grade, 0, 'Failed save does not change persisted grades');
         assert.equal(errors.length, 0, errors.join('\n'));
-        console.log('SOP browser verification passed: shared dashboards/history in Planner and Inspector, no standalone Viewer, read-only Planner audit detail, isolated mutation controls, shared-entry redirects, denied cross-role navigation, grading, frozen results, evidence, actions, scheduling and mobile calendar. Mocked backend only.');
+        console.log('SOP browser verification passed: Planner/Inspector regressions, Viewer dashboard and warehouse filtering, read-only audit results, assigned-action completion and hidden unassigned mutation controls. Mocked backend only.');
     } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -11,13 +11,14 @@ import { readSop } from '../services/sopClient';
 import { SopError, SopLoading, SopPager, SopSelect, SopStatus, type LookupOption } from './SopShared';
 import type { SopChecklist } from '../types';
 import { useSopAccess } from './SopAccessProvider';
+import { sopResultWorkspace } from '../permissions';
 import { SopFilterToolbar } from './SopUi';
 import { Label } from '@/components/ui/label';
 
 export function AuditsPanel({ branch, branches, checklists, onBranch }: { branch: string; branches: LookupOption[]; checklists: SopChecklist[]; onBranch: (value: string) => void }) {
     const access = useSopAccess();
     const [page, setPage] = useState(1);
-    const [status, setStatus] = useState('ALL');
+    const [status, setStatus] = useState(access.roles.includes('VIEWER') ? 'Submitted' : 'ALL');
     const [checklist, setChecklist] = useState('ALL');
     const [from, setFrom] = useState('');
     const [to, setTo] = useState('');
@@ -33,7 +34,7 @@ export function AuditsPanel({ branch, branches, checklists, onBranch }: { branch
             <Button className="h-9" variant="outline" size="sm" onClick={resource.reload}>Refresh audits</Button>
         </SopFilterToolbar><SopError error={resource.error} retry={resource.reload} />
         {resource.loading ? <SopLoading /> : rows && <><Table><TableHeader><TableRow className="bg-muted/30 text-xs">{['Audit', 'Warehouse', 'Checklist', 'Date', 'Inspector', 'Status', 'Score', 'Actions'].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>
-            {rows.map(row => <TableRow key={row.id}><TableCell>{row.auditNo}</TableCell><TableCell>{row.branchName}</TableCell><TableCell>{row.checklistName}</TableCell><TableCell>{row.auditDate}</TableCell><TableCell>#{row.checkedBy}</TableCell><TableCell><SopStatus value={row.status} /></TableCell><TableCell>{row.scorePercent === null ? '—' : `${row.scorePercent.toFixed(2)}%`}</TableCell><TableCell><Button asChild size="sm" variant="outline"><Link href={`/arf/sop-safety/${access.roles.includes('INSPECTOR') ? 'inspector' : 'planner'}/audits/${row.id}`}>View audit</Link></Button></TableCell></TableRow>)}
+            {rows.map(row => <TableRow key={row.id}><TableCell>{row.auditNo}</TableCell><TableCell>{row.branchName}</TableCell><TableCell>{row.checklistName}</TableCell><TableCell>{row.auditDate}</TableCell><TableCell>#{row.checkedBy}</TableCell><TableCell><SopStatus value={row.status} /></TableCell><TableCell>{row.scorePercent === null ? '—' : `${row.scorePercent.toFixed(2)}%`}</TableCell><TableCell><Button asChild size="sm" variant="outline"><Link href={`/arf/sop-safety/${sopResultWorkspace(access.roles)}/audits/${row.id}`}>View audit</Link></Button></TableCell></TableRow>)}
             {!rows.length && <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">No audits match these filters.</TableCell></TableRow>}
         </TableBody></Table><SopPager page={page} total={Number(resource.data?.total)} onPage={setPage} /></>}
     </CardContent></Card>;
