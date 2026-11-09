@@ -5,7 +5,7 @@ const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const DIRECTUS_TOKEN =
     process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || "";
 
-const TABLE_PH = "physical_inventory";
+const TABLE_PH = "physical_inventory_v2";
 
 type BufferFlagLike = {
     type?: string;
