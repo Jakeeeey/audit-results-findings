@@ -31,8 +31,8 @@ import { isAllCategoryName, normalizeUnitCount } from "../utils/compute";
 const API_BASE = "/api/arf/inventory-management/physical-inventory";
 
 const TABLES = {
-    physical_inventory: "physical_inventory",
-    physical_inventory_details: "physical_inventory_details",
+    physical_inventory: "physical_inventory_v2",
+    physical_inventory_details: "physical_inventory_details_v2",
     physical_inventory_details_rfid: "physical_inventory_details_rfid",
     products: "products",
     product_per_supplier: "product_per_supplier",
