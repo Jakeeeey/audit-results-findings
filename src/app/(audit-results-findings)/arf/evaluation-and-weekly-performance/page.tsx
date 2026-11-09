@@ -1,9 +1,4 @@
 import { redirect } from 'next/navigation';
-
-export const runtime = 'nodejs';
+import { HOUSEKEEPING_ENTRY_ROOT } from '@/modules/audit-results-findings/housekeeping/paths';
 export const dynamic = 'force-dynamic';
-
-/** The existing module registry points to this parent path. */
-export default function Page() {
-    redirect('/arf/evaluation-and-weekly-performance/viewer');
-}
+export default function Page() { redirect(`${HOUSEKEEPING_ENTRY_ROOT}/auditor`); }

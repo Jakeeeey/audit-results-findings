@@ -1,5 +1,5 @@
-import EvaluationViewerModule from '@/modules/audit-results-findings/evaluation-and-weekly-performance/viewer/EvaluationViewerModule';
-import { EvaluationPageShell } from '@/modules/audit-results-findings/evaluation-and-weekly-performance/shared/components/EvaluationPageShell';
+import { HousekeepingEntry } from '@/modules/audit-results-findings/housekeeping/HousekeepingEntry';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export default function Page() { return <EvaluationPageShell title="Evaluation Viewer"><EvaluationViewerModule /></EvaluationPageShell>; }
+/** Existing sidebar registry URL; all UI and business logic live under housekeeping. */
+export default function Page() { return <HousekeepingEntry mode="auditor" />; }

@@ -1,5 +1,4 @@
-import EvaluationSchedulerModule from '@/modules/audit-results-findings/evaluation-and-weekly-performance/scheduler/EvaluationSchedulerModule';
-import { EvaluationPageShell } from '@/modules/audit-results-findings/evaluation-and-weekly-performance/shared/components/EvaluationPageShell';
+import { HousekeepingEntry } from '@/modules/audit-results-findings/housekeeping/HousekeepingEntry';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export default function Page() { return <EvaluationPageShell title="Evaluation Scheduler"><EvaluationSchedulerModule /></EvaluationPageShell>; }
+export default function Page() { return <HousekeepingEntry mode="scheduler" />; }
