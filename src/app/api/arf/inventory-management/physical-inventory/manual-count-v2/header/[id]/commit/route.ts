@@ -70,6 +70,35 @@ type PhysicalInventoryDetailRow = {
     offset_match: number | null;
 };
 
+function decodeUserIdFromJwtCookie(
+    req: NextRequest,
+    cookieName = "vos_access_token",
+): number | null {
+    const token = req.cookies.get(cookieName)?.value;
+    if (!token) return null;
+
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+
+    try {
+        const payloadPart = parts[1];
+        const pad = "=".repeat((4 - (payloadPart.length % 4)) % 4);
+        const b64 = (payloadPart + pad).replace(/-/g, "+").replace(/_/g, "/");
+        const jsonStr = Buffer.from(b64, "base64").toString("utf8");
+
+        const payloadUnknown: unknown = JSON.parse(jsonStr);
+        const sub =
+            payloadUnknown && typeof payloadUnknown === "object" && "sub" in payloadUnknown
+                ? (payloadUnknown as { sub?: unknown }).sub
+                : undefined;
+
+        const userId = Number(sub);
+        return Number.isFinite(userId) ? userId : null;
+    } catch {
+        return null;
+    }
+}
+
 function directusHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -147,10 +176,11 @@ function sumHeaderTotalAmount(details: PhysicalInventoryDetailRow[]): number {
     return details.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
 }
 
-export async function POST(_req: NextRequest, context: RouteContext) {
+export async function POST(req: NextRequest, context: RouteContext) {
     try {
         const { id } = await context.params;
         const headerId = Number(id);
+        const committerId = decodeUserIdFromJwtCookie(req);
 
         if (!Number.isFinite(headerId) || headerId <= 0) {
             return NextResponse.json(
@@ -226,14 +256,19 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
         };
 
+        const patchPayload: Record<string, unknown> = {
+            isComitted: 1,
+            isCancelled: 0,
+            committed_at: getPhTimeISOString(),
+            total_amount,
+        };
+        if (committerId) {
+            patchPayload.committed_by = committerId;
+        }
+
         const updated = await directusPatch<PhysicalInventoryHeaderRow>(
             `/items/${TABLE_PH}/${headerId}`,
-            {
-                isComitted: 1,
-                isCancelled: 0,
-                committed_at: getPhTimeISOString(),
-                total_amount,
-            },
+            patchPayload,
         );
 
         return NextResponse.json({ data: updated });

@@ -31,6 +31,12 @@ export type CategoryRow = {
     is_all_category?: boolean;
 };
 
+export type UserRow = {
+    user_id: number;
+    user_fname: string | null;
+    user_lname: string | null;
+};
+
 export type PriceTypeRow = {
     price_type_id: number;
     price_type_name: string;
@@ -45,6 +51,11 @@ export type RfidOnhandResult = {
     ok: boolean;
     item: RfidOnhandApiRow | null;
     message?: string;
+};
+
+export type BrandRow = {
+    brand_id: number;
+    brand_name: string;
 };
 
 export type UnitRow = {
@@ -104,6 +115,14 @@ export type PhysicalInventoryHeaderRow = {
     supplier_id: number | null;
     category_id: number | null;
     encoder_id:
+        | number
+        | {
+            user_id: number;
+            user_fname: string | null;
+            user_lname: string | null;
+        }
+        | null;
+    committed_by?:
         | number
         | {
             user_id: number;
@@ -341,6 +360,7 @@ export type ProductLookupBundle = {
     product_per_price_type: ProductPerPriceTypeRow[];
     categories: CategoryRow[];
     units: UnitRow[];
+    brands: BrandRow[];
 };
 
 export type LoadProductsResult = {

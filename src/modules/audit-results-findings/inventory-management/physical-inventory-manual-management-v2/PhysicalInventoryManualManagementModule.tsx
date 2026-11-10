@@ -236,6 +236,8 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         {},
     );
     const dirtyDetailIdsRef = React.useRef<Set<number>>(new Set());
+    const isFlushingRef = React.useRef(false);
+    const flushPendingRef = React.useRef(false);
 
     const [runningInventoryRows, setRunningInventoryRows] = React.useState<RunningInventoryRow[]>([]);
 
@@ -249,6 +251,15 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         category_id: null,
         price_type_id: null,
     });
+
+    const headerRef = React.useRef<PhysicalInventoryHeaderRow | null>(header);
+    headerRef.current = header;
+
+    const detailRowsRef = React.useRef<PhysicalInventoryDetailRow[]>(detailRows);
+    detailRowsRef.current = detailRows;
+
+    const filtersRef = React.useRef<PhysicalInventoryFiltersType>(filters);
+    filtersRef.current = filters;
 
     const [productSearch, setProductSearch] = React.useState("");
     const [activeQuickFilter, setActiveQuickFilter] = React.useState<
@@ -517,62 +528,99 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
         ok: boolean;
         details: PhysicalInventoryDetailRow[];
     }> => {
-        if (!header?.id) return { ok: true, details: detailRows };
-        if (!dirtyDetailIdsRef.current.size) return { ok: true, details: detailRows };
+        const currentHeader = headerRef.current;
+        if (!currentHeader?.id) return { ok: true, details: detailRowsRef.current };
+        if (!dirtyDetailIdsRef.current.size) return { ok: true, details: detailRowsRef.current };
 
-        const dirtyIds = new Set(dirtyDetailIdsRef.current);
-
-        const updates: BulkPhysicalInventoryDetailUpdateItem[] = detailRows
-            .filter((detail) => dirtyIds.has(detail.id))
-            .map((detail) => ({
-                id: detail.id,
-                physical_count: detail.physical_count,
-                variance: detail.variance,
-                difference_cost: detail.difference_cost,
-                amount: detail.amount,
-            }));
-
-        if (!updates.length) {
-            dirtyDetailIdsRef.current.clear();
-            return { ok: true, details: detailRows };
+        // Serializer / Mutex guard: if already flushing, mark pending and return current details
+        if (isFlushingRef.current) {
+            flushPendingRef.current = true;
+            return { ok: true, details: detailRowsRef.current };
         }
 
+        isFlushingRef.current = true;
         try {
-            setIsSavingDetailBatch(true);
+            while (dirtyDetailIdsRef.current.size > 0) {
+                flushPendingRef.current = false;
+                const dirtyIds = new Set(dirtyDetailIdsRef.current);
+                const currentDetails = detailRowsRef.current;
 
-            const updatedRows = await updatePhysicalInventoryDetailsBulk(updates);
-            const updatedMap = new Map(updatedRows.map((row) => [row.id, row]));
+                const updates: BulkPhysicalInventoryDetailUpdateItem[] = currentDetails
+                    .filter((detail) => dirtyIds.has(detail.id))
+                    .map((detail) => ({
+                        id: detail.id,
+                        physical_count: detail.physical_count,
+                        variance: detail.variance,
+                        difference_cost: detail.difference_cost,
+                        amount: detail.amount,
+                    }));
 
-            const nextDetails = detailRows.map((detail) => updatedMap.get(detail.id) ?? detail);
+                if (!updates.length) {
+                    dirtyDetailIdsRef.current.clear();
+                    break;
+                }
 
-            setDetailRows(nextDetails);
-            for (const id of dirtyIds) {
-                dirtyDetailIdsRef.current.delete(id);
+                setIsSavingDetailBatch(true);
+
+                const updatedRows = await updatePhysicalInventoryDetailsBulk(updates);
+                const updatedMap = new Map(updatedRows.map((row) => [row.id, row]));
+
+                // Clean processed IDs from dirty ref
+                for (const id of dirtyIds) {
+                    dirtyDetailIdsRef.current.delete(id);
+                }
+
+                // MERGE SAFELY against detailRowsRef.current so we never overwrite rows modified while network request was in-flight
+                const latestDetails = detailRowsRef.current.map((detail) => {
+                    // If the row was modified again while in-flight, preserve the newest user edit
+                    if (dirtyDetailIdsRef.current.has(detail.id)) {
+                        return detail;
+                    }
+                    return updatedMap.get(detail.id) ?? detail;
+                });
+
+                detailRowsRef.current = latestDetails;
+                setDetailRows(latestDetails);
+
+                const activeHeaderId = headerRef.current?.id;
+                if (!activeHeaderId) break;
+
+                const nextHeader = await updatePhysicalInventoryHeader(activeHeaderId, {
+                    total_amount: sumHeaderTotalAmount(latestDetails),
+                    remarks: headerRef.current?.remarks ?? "",
+                });
+
+                headerRef.current = nextHeader;
+                setHeader(nextHeader);
+                onRecordChange?.(nextHeader);
+
+                // If user didn't dirty more rows during header save, rebuild grouped rows with latest data
+                if (dirtyDetailIdsRef.current.size === 0) {
+                    rebuildGroupedRows({
+                        nextDetails: latestDetails,
+                        nextHeader,
+                        nextFilters: filtersRef.current,
+                    });
+                }
             }
 
-            const nextHeader = await updatePhysicalInventoryHeader(header.id, {
-                total_amount: sumHeaderTotalAmount(nextDetails),
-                remarks: header.remarks ?? "",
-            });
-
-            setHeader(nextHeader);
-            onRecordChange?.(nextHeader);
-
-            rebuildGroupedRows({
-                nextDetails,
-                nextHeader,
-                nextFilters: filters,
-            });
-            return { ok: true, details: nextDetails };
+            return { ok: true, details: detailRowsRef.current };
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "Failed to save physical count batch.";
             toast.error(message);
-            return { ok: false, details: detailRows };
+            return { ok: false, details: detailRowsRef.current };
         } finally {
+            isFlushingRef.current = false;
             setIsSavingDetailBatch(false);
+
+            // If a blur occurred while the previous loop was finishing, trigger another flush
+            if (flushPendingRef.current || dirtyDetailIdsRef.current.size > 0) {
+                flushPendingRef.current = false;
+                void flushDirtyDetails();
+            }
         }
-    }, [detailRows, filters, header, onRecordChange, rebuildGroupedRows]);
+    }, [onRecordChange, rebuildGroupedRows]);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -1101,11 +1149,11 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
 
             try {
                 // Determine family key (Parent ID or root product ID)
-                const familyKey = variant.parent_id ?? variant.product_id;
+                const familyKey = (variant.parent_id && variant.parent_id > 0) ? variant.parent_id : variant.product_id;
 
                 // Find all siblings in the same family from eligibleVariants
                 const familySiblings = eligibleVariants.filter((v) => {
-                    const vFamilyKey = v.parent_id ?? v.product_id;
+                    const vFamilyKey = (v.parent_id && v.parent_id > 0) ? v.parent_id : v.product_id;
                     return vFamilyKey === familyKey;
                 });
 
@@ -1167,6 +1215,83 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 const message =
                     error instanceof Error ? error.message : "Failed to add product family.";
                 toast.error(message);
+            }
+        },
+        [canEdit, detailRows, eligibleVariants, header, reloadDetails, runningInventoryRows]
+    );
+
+    const handleAddMultipleProducts = React.useCallback(
+        async (selectedVariants: EligibleVariantRow[]) => {
+            if (!header?.id || !canEdit || !selectedVariants.length) return;
+
+            try {
+                // Collect all family keys from selected representative variants
+                const selectedFamilyKeys = new Set(
+                    selectedVariants.map((v) => (v.parent_id && v.parent_id > 0 ? v.parent_id : v.product_id))
+                );
+
+                // Find all siblings in the selected families from eligibleVariants
+                const allFamilySiblings = eligibleVariants.filter((v) => {
+                    const vFamilyKey = v.parent_id && v.parent_id > 0 ? v.parent_id : v.product_id;
+                    return selectedFamilyKeys.has(vFamilyKey);
+                });
+
+                // Identify which siblings are already loaded
+                const existingProductIds = new Set(detailRows.map((d) => d.product_id));
+                const siblingsToLoad = allFamilySiblings.filter((v) => !existingProductIds.has(v.product_id));
+
+                if (siblingsToLoad.length === 0) {
+                    toast.info("All variants for the selected families are already added.");
+                    return;
+                }
+
+                // Compute running inventory allocations
+                const systemCountAllocations = new Map<number, number>();
+
+                for (const sibling of allFamilySiblings) {
+                    const siblingStock = runningInventoryRows
+                        .filter(
+                            (r) =>
+                                (!r.branch_id || r.branch_id === header.branch_id) &&
+                                r.product_id === sibling.product_id
+                        )
+                        .reduce((acc, r) => acc + (r.running_inventory ?? 0), 0);
+
+                    const systemCount = convertBaseQtyToDisplayQty(siblingStock, sibling.unit_count);
+                    systemCountAllocations.set(sibling.product_id, systemCount);
+                }
+
+                const payloads: PhysicalInventoryDetailUpsertPayload[] = siblingsToLoad.map((sibling) => {
+                    const systemCount = systemCountAllocations.get(sibling.product_id) ?? 0;
+                    const initialPhysicalCount = 0;
+                    const variance = computeVariance(initialPhysicalCount, systemCount);
+                    const differenceCost = computeDifferenceCost(variance, sibling.unit_price);
+                    const amount = computeAmount(initialPhysicalCount, sibling.unit_price);
+
+                    return {
+                        ph_id: header.id,
+                        product_id: sibling.product_id,
+                        unit_price: sibling.unit_price,
+                        system_count: systemCount,
+                        physical_count: initialPhysicalCount,
+                        variance,
+                        difference_cost: differenceCost,
+                        amount,
+                        offset_match: 0,
+                    };
+                });
+
+                await createPhysicalInventoryDetailsBulk(payloads);
+                await reloadDetails(header.id);
+
+                toast.success(
+                    `Added ${payloads.length} variants across ${selectedFamilyKeys.size} product families.`
+                );
+            } catch (error) {
+                const message =
+                    error instanceof Error ? error.message : "Failed to add selected products.";
+                toast.error(message);
+                throw error;
             }
         },
         [canEdit, detailRows, eligibleVariants, header, reloadDetails, runningInventoryRows]
@@ -2011,6 +2136,7 @@ export function PhysicalInventoryManualManagementModule(props: Props) {
                 eligibleVariants={eligibleVariants}
                 existingProductIds={new Set(detailRows.map((d) => d.product_id))}
                 onAdd={handleAddProduct}
+                onAddMultiple={handleAddMultipleProducts}
             />
 
             <PhysicalInventoryUploadCountSheetDialog
