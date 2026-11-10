@@ -6,7 +6,8 @@ export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
         const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
-        const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
+        const DIRECTUS_TOKEN =
+            process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || "";
 
         const targetFolderName =
             (formData.get("folder_name") as string) || "physical_inventory_attachments";

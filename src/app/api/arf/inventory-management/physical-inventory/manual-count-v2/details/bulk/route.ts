@@ -93,6 +93,80 @@ function normalizeUpdateItem(value: unknown): BulkDetailUpdateItem | null {
     return normalized;
 }
 
+async function fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    retries = 2,
+    delayMs = 300,
+): Promise<Response> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            return await fetch(url, init);
+        } catch (err) {
+            lastError = err;
+            if (attempt < retries) {
+                await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+            }
+        }
+    }
+    throw lastError;
+}
+
+async function patchDetailRowsNativeBatch(
+    items: BulkDetailUpdateItem[],
+): Promise<PhysicalInventoryDetailRow[]> {
+    const upstream = new URL(
+        `/items/physical_inventory_details_v2`,
+        DIRECTUS_BASE_URL,
+    );
+
+    const payloads = items.map((item) => {
+        const payload: Record<string, unknown> = { id: item.id };
+        if ("physical_count" in item) {
+            payload.physical_count = item.physical_count ?? 0;
+        }
+        if ("variance" in item) {
+            payload.variance = item.variance ?? 0;
+        }
+        if ("difference_cost" in item) {
+            payload.difference_cost = item.difference_cost ?? 0;
+        }
+        if ("amount" in item) {
+            payload.amount = item.amount ?? 0;
+        }
+        if ("offset_match" in item) {
+            payload.offset_match = item.offset_match ?? 0;
+        }
+        if ("offset_remarks" in item) {
+            payload.offset_remarks = item.offset_remarks ?? null;
+        }
+        return payload;
+    });
+
+    const response = await fetchWithRetry(upstream.toString(), {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify(payloads),
+        cache: "no-store",
+    });
+
+    const text = await response.text().catch(() => "");
+
+    if (!response.ok) {
+        throw new Error(
+            text || `Failed to bulk update details with status ${response.status}.`,
+        );
+    }
+
+    if (!text) {
+        throw new Error(`Empty response while bulk updating details.`);
+    }
+
+    const json = JSON.parse(text) as { data: PhysicalInventoryDetailRow[] };
+    return Array.isArray(json.data) ? json.data : [];
+}
+
 async function patchDetailRow(
     item: BulkDetailUpdateItem,
 ): Promise<PhysicalInventoryDetailRow> {
@@ -121,7 +195,7 @@ async function patchDetailRow(
     if ("offset_remarks" in item) {
         payload.offset_remarks = item.offset_remarks ?? null;
     }
-    const response = await fetch(upstream.toString(), {
+    const response = await fetchWithRetry(upstream.toString(), {
         method: "PATCH",
         headers: directusHeaders(),
         body: JSON.stringify(payload),
@@ -142,6 +216,29 @@ async function patchDetailRow(
 
     const json = JSON.parse(text) as DirectusItemResponse<PhysicalInventoryDetailRow>;
     return json.data;
+}
+
+async function mapConcurrent<T, R>(
+    items: T[],
+    concurrency: number,
+    fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let currentIndex = 0;
+
+    async function worker() {
+        while (currentIndex < items.length) {
+            const index = currentIndex++;
+            results[index] = await fn(items[index]);
+        }
+    }
+
+    const workers = Array.from(
+        { length: Math.min(concurrency, items.length) },
+        () => worker(),
+    );
+    await Promise.all(workers);
+    return results;
 }
 
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
@@ -171,9 +268,15 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
             );
         }
 
-        const updatedRows = await Promise.all(updates.map((item) => patchDetailRow(item)));
-
-        return NextResponse.json({ data: updatedRows });
+        // Fast-path: Native Directus batch PATCH in a single network roundtrip
+        try {
+            const updatedRows = await patchDetailRowsNativeBatch(updates);
+            return NextResponse.json({ data: updatedRows });
+        } catch {
+            // Fallback: Controlled concurrency with individual updates if batch PATCH fails
+            const fallbackRows = await mapConcurrent(updates, 5, (item) => patchDetailRow(item));
+            return NextResponse.json({ data: fallbackRows });
+        }
     } catch (error) {
         const message =
             error instanceof Error ? error.message : "Failed to bulk update PI details.";

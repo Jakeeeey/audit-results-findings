@@ -84,7 +84,7 @@ export function OffsettingGroupsTable({
                                         {new Date(group.created_at.trim().replace(/(?:Z|[+-]\d{2}:?\d{2})$/i, "")).toLocaleString("en-PH")}
                                     </p>
                                 </div>
-                                {isPending && isGroupUnsaved && (
+                                {isPending && (
                                     <div className="flex items-center gap-1">
                                         <Button
                                             variant="ghost"

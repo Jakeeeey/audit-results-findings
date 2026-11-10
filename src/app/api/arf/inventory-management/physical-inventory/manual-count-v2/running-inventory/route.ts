@@ -29,6 +29,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const incomingUrl = new URL(req.url);
 
         const branchName = incomingUrl.searchParams.get("branchName")?.trim() ?? "";
+        const productName = incomingUrl.searchParams.get("productName")?.trim() ?? "";
         const cutOffDateStr = incomingUrl.searchParams.get("cutOffDate")?.trim() ?? "";
         
         let cutOffTime = Number.MAX_SAFE_INTEGER;
@@ -45,11 +46,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }
 
         const targetUrl = new URL(
-            `${SPRING_API_BASE_URL.replace(/\/$/, "")}/api/view-product-movements/filter`,
+            `${SPRING_API_BASE_URL.replace(/\/$/, "")}/api/view-product-movements-no-scm/filter`,
         );
 
         if (branchName) {
             targetUrl.searchParams.set("branchName", branchName);
+        }
+
+        if (productName) {
+            targetUrl.searchParams.set("productName", productName);
         }
 
         const springRes = await fetch(targetUrl.toString(), {
