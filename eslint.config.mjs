@@ -12,8 +12,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Local scratch scripts and artifacts (already gitignored).
-    ".agent/**",
   ]),
 ]);
 
