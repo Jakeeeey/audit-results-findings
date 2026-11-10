@@ -299,9 +299,9 @@ export function PhysicalInventoryUploadCountSheetDialog({
             const ext = "." + (file.name.split(".").pop() ?? "").toLowerCase();
             let errorMsg: string | undefined;
             if (!ALLOWED_EXTENSIONS.includes(ext)) {
-                errorMsg = `Format not allowed (${ext}).`;
+                errorMsg = `File type not supported (${ext}).`;
             } else if (file.size > MAX_FILE_SIZE) {
-                errorMsg = `File too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Max 10MB.`;
+                errorMsg = `File exceeds 10MB limit (${(file.size / (1024 * 1024)).toFixed(1)}MB).`;
             }
             newStaged.push({
                 file,
@@ -314,20 +314,19 @@ export function PhysicalInventoryUploadCountSheetDialog({
     };
 
     const handleUploadStaged = async () => {
-        if (!physicalInventoryId || stagedFiles.length === 0) return;
-        const validFiles = stagedFiles.filter((item) => !item.error);
-        if (validFiles.length === 0) {
+        if (!physicalInventoryId || stagedFiles.length === 0 || isUploading) return;
+        const invalidFiles = stagedFiles.filter((item) => item.error && (item.error.includes("exceeds 10MB") || item.error.includes("not supported")));
+        if (invalidFiles.length > 0) {
             toast.error("Please remove invalid files before proceeding.");
             return;
         }
+
         setIsUploading(true);
         let successCount = 0;
         const remaining: Array<{ file: File; id: string; error?: string }> = [];
+        const errorsOccurred: string[] = [];
+
         for (const item of stagedFiles) {
-            if (item.error) {
-                remaining.push(item);
-                continue;
-            }
             try {
                 const uploaded = await uploadCountSheetFile(item.file);
                 if (uploaded?.id) {
@@ -338,20 +337,30 @@ export function PhysicalInventoryUploadCountSheetDialog({
                     });
                     successCount++;
                 } else {
-                    remaining.push({ ...item, error: "Upload failed." });
+                    const failMsg = "Upload failed.";
+                    remaining.push({ ...item, error: failMsg });
+                    errorsOccurred.push(`${item.file.name}: ${failMsg}`);
                 }
             } catch (err) {
+                const failMsg = err instanceof Error ? err.message : "Upload failed.";
                 remaining.push({
                     ...item,
-                    error: err instanceof Error ? err.message : "Upload failed.",
+                    error: failMsg,
                 });
+                errorsOccurred.push(`${item.file.name}: ${failMsg}`);
             }
         }
+
         setStagedFiles(remaining);
         setIsUploading(false);
+
         if (successCount > 0) {
             toast.success(`Successfully uploaded ${successCount} file(s).`);
             void loadAttachments();
+        }
+
+        if (errorsOccurred.length > 0) {
+            toast.error(errorsOccurred[0] || "Upload failed. Please try again.");
         }
     };
 
@@ -490,24 +499,37 @@ export function PhysicalInventoryUploadCountSheetDialog({
                                                     </Button>
                                                 </div>
                                             </div>
-                                            <div className="max-h-[90px] overflow-y-auto space-y-1 pr-1">
+                                            <div className="max-h-[120px] overflow-y-auto space-y-1.5 pr-1">
                                                 {stagedFiles.map((sf) => (
                                                     <div
                                                         key={sf.id}
-                                                        className="flex items-center justify-between gap-1 text-[11px] py-0.5 px-1.5 rounded bg-muted/40"
+                                                        className={cn(
+                                                            "flex flex-col gap-0.5 py-1 px-2 rounded border text-[11px] transition-colors",
+                                                            sf.error
+                                                                ? "bg-destructive/10 border-destructive/30 text-destructive dark:bg-destructive/20"
+                                                                : "bg-muted/40 border-muted-foreground/10 text-foreground"
+                                                        )}
                                                     >
-                                                        <div className="flex items-center gap-1.5 min-w-0">
-                                                            {getStagedFileIcon(sf.file.name)}
-                                                            <span className="truncate">{sf.file.name}</span>
+                                                        <div className="flex items-center justify-between gap-1">
+                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                {getStagedFileIcon(sf.file.name)}
+                                                                <span className="truncate font-medium">{sf.file.name}</span>
+                                                            </div>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-4 w-4 text-muted-foreground hover:text-destructive shrink-0"
+                                                                onClick={() => setStagedFiles((prev) => prev.filter((p) => p.id !== sf.id))}
+                                                                disabled={isUploading}
+                                                            >
+                                                                <X className="h-3 w-3" />
+                                                            </Button>
                                                         </div>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-5 w-5 text-muted-foreground hover:text-destructive shrink-0"
-                                                            onClick={() => setStagedFiles((prev) => prev.filter((p) => p.id !== sf.id))}
-                                                        >
-                                                            <X className="h-3 w-3" />
-                                                        </Button>
+                                                        {sf.error && (
+                                                            <p className="text-[10px] font-semibold text-destructive pl-4 tracking-tight">
+                                                                {sf.error}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>

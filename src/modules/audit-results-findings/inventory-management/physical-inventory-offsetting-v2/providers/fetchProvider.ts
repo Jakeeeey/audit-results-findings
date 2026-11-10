@@ -298,3 +298,10 @@ export async function persistOffsetGroupAssignment(input: {
 
     await updatePhysicalInventoryDetailsBulk(updates);
 }
+
+export async function persistAllOffsetAssignments(
+    updates: BulkPhysicalInventoryDetailUpdateItem[],
+): Promise<void> {
+    if (!updates.length) return;
+    await updatePhysicalInventoryDetailsBulk(updates);
+}
