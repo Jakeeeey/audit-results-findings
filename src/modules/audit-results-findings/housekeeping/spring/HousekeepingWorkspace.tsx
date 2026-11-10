@@ -79,7 +79,7 @@ export function HousekeepingWorkspace({ mode }: { mode: 'auditor' | 'checker' | 
         };
         fetchData().catch(e => { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : 'Housekeeping data could not load'); setSettledKey(requestKey); } });
         return () => controller.abort();
-    }, [branch, month, page, status, mode, version, requestKey]);
+    }, [branch, month, page, status, mode, version, requestKey, isAuditorOrChecker]);
     const warehouse = dummyWarehouses.find(w => w.id === Number(branch));
     const available = checklists.filter(c => c.active && (c.branchId === null || c.branchId === Number(branch)));
     const changeScope = () => { setPage(1); setDay(undefined); setSelected(null); setForm(undefined); };
