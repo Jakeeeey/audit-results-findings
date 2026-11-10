@@ -11,7 +11,7 @@ import type {
 } from "./types";
 import {
     loadPhysicalInventoryOffsettingSnapshot,
-    persistOffsetGroupAssignment,
+    persistAllOffsetAssignments,
 } from "./providers/fetchProvider";
 import {
     derivePhysicalInventoryStatus,
@@ -307,7 +307,11 @@ export function PhysicalInventoryOffsettingModule({
             setIsSaving(true);
 
             const allAssignedDetailIds = new Set<number>();
-            const promises: Promise<unknown>[] = [];
+            const bulkPayload: Array<{
+                id: number;
+                offset_match: number | null;
+                offset_remarks: string | null;
+            }> = [];
             const detailAssignmentMap = new Map<number, { match: number; remarks: string | null }>();
 
             const normalizedGroups: PhysicalInventoryOffsetGroup[] = offsetGroups.map((group, index) => {
@@ -321,17 +325,12 @@ export function PhysicalInventoryOffsettingModule({
                 groupDetailIds.forEach((id) => {
                     allAssignedDetailIds.add(id);
                     detailAssignmentMap.set(id, { match: matchNumber, remarks: trimmedRemarks });
+                    bulkPayload.push({
+                        id,
+                        offset_match: matchNumber,
+                        offset_remarks: trimmedRemarks,
+                    });
                 });
-
-                if (groupDetailIds.length > 0) {
-                    promises.push(
-                        persistOffsetGroupAssignment({
-                            detailIds: groupDetailIds,
-                            offsetMatch: matchNumber,
-                            offsetRemarks: trimmedRemarks,
-                        })
-                    );
-                }
 
                 return {
                     ...group,
@@ -363,16 +362,18 @@ export function PhysicalInventoryOffsettingModule({
                 .map((r) => r.detail_id as number);
 
             if (unassignedDetailIds.length > 0) {
-                promises.push(
-                    persistOffsetGroupAssignment({
-                        detailIds: unassignedDetailIds,
-                        offsetMatch: 0,
-                        offsetRemarks: null,
-                    })
-                );
+                unassignedDetailIds.forEach((id) => {
+                    bulkPayload.push({
+                        id,
+                        offset_match: 0,
+                        offset_remarks: null,
+                    });
+                });
             }
 
-            await Promise.all(promises);
+            if (bulkPayload.length > 0) {
+                await persistAllOffsetAssignments(bulkPayload);
+            }
 
             // Sync local state with normalized match numbers and updated row metadata
             setOffsetGroups(normalizedGroups);
