@@ -1071,7 +1071,7 @@ export async function fetchPhysicalInventoryAttachments(
 ): Promise<PhysicalInventoryAttachmentRow[]> {
     try {
         const res = await apiGet<DirectusItemsResponse<PhysicalInventoryAttachmentRow>>(
-            `${API_BASE}/directus/physical_inventory_attachments`,
+            `${API_BASE}/directus/physical_inventory_attachments_v2`,
             {
                 filter: JSON.stringify({
                     physical_inventory_id: { _eq: physicalInventoryId },
@@ -1158,7 +1158,7 @@ export async function createPhysicalInventoryAttachment(payload: {
     created_by: number;
 }): Promise<PhysicalInventoryAttachmentRow> {
     const res = await apiPost<typeof payload, DirectusItemResponse<PhysicalInventoryAttachmentRow>>(
-        `${API_BASE}/directus/physical_inventory_attachments`,
+        `${API_BASE}/directus/physical_inventory_attachments_v2`,
         payload
     );
     return res.data;
@@ -1167,7 +1167,7 @@ export async function createPhysicalInventoryAttachment(payload: {
 export async function deletePhysicalInventoryAttachment(
     attachmentId: number
 ): Promise<void> {
-    const url = new URL(`${API_BASE}/directus/physical_inventory_attachments/${attachmentId}`, window.location.origin);
+    const url = new URL(`${API_BASE}/directus/physical_inventory_attachments_v2/${attachmentId}`, window.location.origin);
     const response = await fetch(url.toString(), {
         method: "DELETE",
     });
