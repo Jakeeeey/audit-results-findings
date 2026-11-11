@@ -52,6 +52,8 @@ interface DirectusPDI {
 interface DirectusSI {
   invoice_id: number;
   invoice_no: string;
+  order_id?: string;
+  customer_code?: string;
   total_amount: number;
   net_amount: number;
   discount_amount?: number;
@@ -98,6 +100,23 @@ interface DirectusMemo {
   memo_number: string;
 }
 
+interface DirectusDeliveryProof {
+  id: number;
+  post_dispatch_plan_id: number;
+  post_dispatch_invoice_id: number;
+  driver_user_id: number;
+  outcome: string;
+  remarks?: string | null;
+  recipient_name?: string | null;
+  signature_file_id?: string | null;
+  photo_file_id: string;
+  captured_at: string;
+  received_at: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  command_id?: string;
+}
+
 interface DirectusStaff {
   role: string;
   is_present: number | boolean;
@@ -108,6 +127,37 @@ export async function GET(req: NextRequest) {
   const action = req.nextUrl.searchParams.get("action");
 
   try {
+    if (action === "download-proof") {
+      const fileId = req.nextUrl.searchParams.get("fileId");
+      if (!fileId) {
+        return NextResponse.json({ error: "File ID is required" }, { status: 400 });
+      }
+
+      const fileUrl = `${DIRECTUS_URL}/assets/${fileId}`;
+      const fileRes = await fetch(fileUrl, {
+        headers: {
+          Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+        },
+        cache: "no-store",
+      });
+
+      if (!fileRes.ok) {
+        return NextResponse.json({ error: "Failed to fetch file from storage" }, { status: fileRes.status });
+      }
+
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const contentType = fileRes.headers.get("content-type") || "image/jpeg";
+      const filename = req.nextUrl.searchParams.get("filename") || `Proof_${fileId}.jpg`;
+
+      return new NextResponse(arrayBuffer, {
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Content-Length": arrayBuffer.byteLength.toString(),
+        },
+      });
+    }
+
     if (action === "memo-data") {
       const invoiceNo = req.nextUrl.searchParams.get("invoiceNo");
 
@@ -523,10 +573,25 @@ export async function GET(req: NextRequest) {
       console.log(`[AUDIT DEBUG] Invoice IDs to fetch: ${invoiceIds.join(",")}`);
 
       // 2. Fetch Sales Invoices
-      const siUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&fields=invoice_id,invoice_no,total_amount,net_amount,discount_amount&filter[invoice_id][_in]=${invoiceIds.join(",")}`;
+      const siUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&fields=invoice_id,invoice_no,order_id,customer_code,total_amount,net_amount,discount_amount&filter[invoice_id][_in]=${invoiceIds.join(",")}`;
       const siRes = await fetch(siUrl, { headers: fetchHeaders, cache: "no-store" });
       const siJson = await siRes.json();
       const salesInvoices = siJson.data || [];
+
+      // 2b. Fetch Customers for matched customer_codes
+      const customerCodes = [...new Set(salesInvoices.map((si: DirectusSI) => si.customer_code).filter(Boolean))];
+      let customers: { customer_code: string; customer_name: string }[] = [];
+      if (customerCodes.length > 0) {
+        try {
+          const custFilter = encodeURIComponent(customerCodes.join(","));
+          const custUrl = `${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name&filter[customer_code][_in]=${custFilter}`;
+          const custRes = await fetch(custUrl, { headers: fetchHeaders, cache: "no-store" });
+          const custJson = await custRes.json();
+          customers = custJson.data || [];
+        } catch (e) {
+          console.error("Error fetching customers for delivery proof header:", e);
+        }
+      }
 
       // Step 3a: Fetch ALL Unfulfilled Sales Transactions and filter in JS as a robust workaround
       const ufUrl = `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?limit=-1&fields=*`;
@@ -563,6 +628,17 @@ export async function GET(req: NextRequest) {
       const nteUrl = `${DIRECTUS_URL}/items/post_dispatch_nte?limit=-1&fields=id,doc_no,file,post_dispatch_invoice_id&filter[post_dispatch_invoice_id][_in]=${pdis.map((p: DirectusPDI) => p.id).join(",")}`;
       const nteRes = await fetch(nteUrl, { headers: fetchHeaders, cache: "no-store" });
       const nteData = (await nteRes.json()).data || [] as DirectusNTE[];
+
+      // Step 3d-2: Fetch delivery proofs from post_dispatch_delivery_proofs
+      let deliveryProofs: DirectusDeliveryProof[] = [];
+      try {
+        const proofUrl = `${DIRECTUS_URL}/items/post_dispatch_delivery_proofs?limit=-1&filter[post_dispatch_plan_id][_eq]=${planId}&fields=id,post_dispatch_plan_id,post_dispatch_invoice_id,driver_user_id,outcome,remarks,recipient_name,photo_file_id,captured_at,received_at,latitude,longitude`;
+        const proofRes = await fetch(proofUrl, { headers: fetchHeaders, cache: "no-store" });
+        const proofJson = await proofRes.json();
+        deliveryProofs = proofJson.data || [];
+      } catch (err) {
+        console.error("Error fetching delivery proofs:", err);
+      }
 
       // Step 3e: Fetch all departments for name mapping (to avoid IDs like "8")
       const allDeptsRes = await fetch(`${DIRECTUS_URL}/items/department?limit=-1&fields=department_id,department_name`, { headers: fetchHeaders, cache: "no-store" });
@@ -684,10 +760,19 @@ export async function GET(req: NextRequest) {
         // Find ALL NTE records
         const relatedNtes = nteData.filter((n: DirectusNTE) => Number(n.post_dispatch_invoice_id) === Number(pdi.id));
 
+        // Find Delivery Proof record for this invoice
+        const matchedProof = deliveryProofs.find((proof: DirectusDeliveryProof) => Number(proof.post_dispatch_invoice_id) === Number(pdi.id));
+
+        // Find customer details for this invoice
+        const matchedCustomer = customers.find(c => c.customer_code === si?.customer_code);
+
         return {
           id: pdi.id,
           invoiceId: pdi.invoice_id,
           receiptNo: si?.invoice_no || "N/A",
+          orderNo: si?.order_id || null,
+          customerName: matchedCustomer?.customer_name || null,
+          customerCode: si?.customer_code || null,
           amount: amount,
           status: pdi.status,
           warehouseRemarks: pdi.remarks || "",
@@ -711,6 +796,20 @@ export async function GET(req: NextRequest) {
             nte: concern.nte,
             remarks: concern.remarks,
             rejectedAmount: rejectedAmount,
+          } : null,
+          deliveryProof: matchedProof ? {
+            id: matchedProof.id,
+            post_dispatch_plan_id: matchedProof.post_dispatch_plan_id,
+            post_dispatch_invoice_id: matchedProof.post_dispatch_invoice_id,
+            driver_user_id: matchedProof.driver_user_id,
+            outcome: matchedProof.outcome,
+            remarks: matchedProof.remarks,
+            recipient_name: matchedProof.recipient_name,
+            photo_file_id: matchedProof.photo_file_id,
+            captured_at: matchedProof.captured_at,
+            received_at: matchedProof.received_at,
+            latitude: matchedProof.latitude,
+            longitude: matchedProof.longitude
           } : null
         };
       });
