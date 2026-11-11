@@ -228,6 +228,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             // 4. Calculate the running inventory FOR EACH INDIVIDUAL PRODUCT within the family
             const runningInventoryByProduct = new Map<number, number>();
             const branchIdByProduct = new Map<number, number>();
+            const productsWithMovement = new Set<number>();
 
             for (const row of validMovements) {
                 const pid = Number(row.productId || row.product_id);
@@ -244,20 +245,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     // For subsequent PH docs, we use the injected physical/system counts to derive true variance
                     const calcVariance = row.variance ?? ((Number(phys) || 0) - (Number(sys) || 0));
                     change = calcVariance * (Number(row.unitCount) || 1);
+                    productsWithMovement.add(pid);
                 } else {
-                    change = (Number(row.inBase) || 0) - (Number(row.outBase) || 0);
+                    const inBase = Number(row.inBase) || 0;
+                    const outBase = Number(row.outBase) || 0;
+                    if (inBase === 0 && outBase === 0) {
+                        continue;
+                    }
+                    change = inBase - outBase;
+                    productsWithMovement.add(pid);
                 }
 
                 runningInventoryByProduct.set(pid, (runningInventoryByProduct.get(pid) || 0) + change);
                 branchIdByProduct.set(pid, Number(row.branchId || row.branch_id || branchIdByProduct.get(pid) || 0));
             }
 
-            // Merge back into inventoryMap
-            for (const [pid, runningInventory] of runningInventoryByProduct.entries()) {
+            // Only retain products or families that had valid movements
+            for (const pid of productsWithMovement) {
                 inventoryMap.set(String(pid), {
                     productId: pid,
                     branchId: branchIdByProduct.get(pid) || 0,
-                    runningInventory
+                    runningInventory: runningInventoryByProduct.get(pid) || 0
                 });
             }
         }

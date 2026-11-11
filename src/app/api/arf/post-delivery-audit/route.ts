@@ -89,6 +89,7 @@ interface DirectusReturn {
   return_id: number;
   return_number: string;
   total_amount: number;
+  invoice_no?: string;
 }
 
 interface DirectusMemo {
@@ -109,7 +110,7 @@ export async function GET(req: NextRequest) {
   try {
     if (action === "memo-data") {
       const invoiceNo = req.nextUrl.searchParams.get("invoiceNo");
-      
+
       // 1. Fetch Sales Invoice
       const siUrl = `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_no][_eq]=${invoiceNo}&fields=*`;
       const siRes = await fetch(siUrl, { headers: fetchHeaders, cache: "no-store" });
@@ -132,7 +133,7 @@ export async function GET(req: NextRequest) {
         const coaRes = await fetch(coaUrlPlural, { headers: fetchHeaders, cache: "no-store" });
         const coaJson = await coaRes.json();
         coas = coaJson.data || [];
-        
+
         if (coas.length === 0) {
           const coaUrlSingular = `${DIRECTUS_URL}/items/chart_of_account?fields=*&limit=-1&filter[account_type][_in]=7,8,9,10,11`;
           const coaResSing = await fetch(coaUrlSingular, { headers: fetchHeaders, cache: "no-store" });
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
           const soUrl = `${DIRECTUS_URL}/items/sales_order?filter[order_no][_eq]=${siData.order_id}&fields=supplier_id.*`;
           const soRes = await fetch(soUrl, { headers: fetchHeaders, cache: "no-store" });
           const soData = (await soRes.json()).data?.[0];
-          
+
           if (soData?.supplier_id) {
             resolvedSupplier = soData.supplier_id;
             if (resolvedSupplier.supplier_shortcut) {
@@ -186,7 +187,7 @@ export async function GET(req: NextRequest) {
 
       const customerCode = siData?.customer_code || salesReturns[0]?.customer_code;
       let customer = { customer_code: customerCode, customer_name: "Unknown" };
-      
+
       if (customerCode) {
         try {
           const custUrl = `${DIRECTUS_URL}/items/customer?filter[customer_code][_eq]=${customerCode}&fields=id,customer_name`;
@@ -210,7 +211,7 @@ export async function GET(req: NextRequest) {
           existingMemo: existingMemo || null,
           invoiceDetails: siData,
           generatedMemoNo,
-          resolvedSupplier 
+          resolvedSupplier
         }
       });
     }
@@ -229,7 +230,7 @@ export async function GET(req: NextRequest) {
       const res = await fetch(url, { cache: "no-store" });
       const json = await res.json() as DirectusUser[] | { data: DirectusUser[] };
       const rawData = Array.isArray(json) ? json : (json.data || []);
-      
+
       const mappedDrivers = rawData.map((u: DirectusUser) => ({
         id: u.user_id,
         first_name: u.user_fname,
@@ -358,7 +359,7 @@ export async function GET(req: NextRequest) {
       // 7. Aggregate
       const result = plans.map((plan: DirectusPlan) => {
         const planInvoices = pdis.filter((p: DirectusPDI) => p.post_dispatch_plan_id === plan.id);
-        
+
         let auditedCount = 0;
         let receivedCount = 0;
         let fulfilledCount = 0;
@@ -389,8 +390,8 @@ export async function GET(req: NextRequest) {
         const percentage = totalInvoices > 0 ? ((auditedCount + receivedCount) / (totalInvoices * 2)) * 100 : 0;
 
         const driver = drivers.find((d: DirectusUser) => d.id === plan.driver_id);
-        const driverName = driver 
-          ? `${driver.first_name || ""} ${driver.last_name || ""}`.trim() 
+        const driverName = driver
+          ? `${driver.first_name || ""} ${driver.last_name || ""}`.trim()
           : plan.driver_id ? `ID: ${plan.driver_id}` : "N/A";
 
         return {
@@ -420,7 +421,7 @@ export async function GET(req: NextRequest) {
       const end = start + pageSize;
       const paginatedData = sortedResult.slice(start, end);
 
-      return NextResponse.json({ 
+      return NextResponse.json({
         data: paginatedData,
         meta: {
           total: sortedResult.length,
@@ -452,7 +453,7 @@ export async function GET(req: NextRequest) {
 
       // Get department name from joined relation or fallback fields
       let department = userData.department_id?.department_name || userData.user_department || userData.department;
-      
+
       // If still an ID (number) or missing, try a manual fetch from the department table
       if (department && !isNaN(Number(department))) {
         try {
@@ -473,9 +474,9 @@ export async function GET(req: NextRequest) {
           console.error("Error fetching department name:", e);
         }
       }
-      
+
       if (!department || department === "undefined") department = "N/A";
-      
+
       return NextResponse.json({ data: { ...userData, departmentName: department } });
     }
 
@@ -502,7 +503,7 @@ export async function GET(req: NextRequest) {
 
       // Filter by is_present in JS (handling both 1/0 and true/false)
       const presentStaff = staffData.filter((s: DirectusStaff) => s.is_present == 1 || s.is_present === true);
-      
+
       // Fallback: if no one is marked present, take everyone (to avoid N/A during testing)
       const activeStaff = presentStaff.length > 0 ? presentStaff : staffData;
 
@@ -531,7 +532,7 @@ export async function GET(req: NextRequest) {
       const ufUrl = `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?limit=-1&fields=*`;
       const ufRes = await fetch(ufUrl, { headers: fetchHeaders, cache: "no-store" });
       const allUfData = (await ufRes.json()).data || [];
-      
+
       // Filter in JS
       const ufData = allUfData.filter((u: DirectusUnfulfilled) => {
         const sid = typeof u.sales_invoice_id === 'object' ? (u.sales_invoice_id as unknown as { id: number }).id : u.sales_invoice_id;
@@ -562,32 +563,55 @@ export async function GET(req: NextRequest) {
       const nteUrl = `${DIRECTUS_URL}/items/post_dispatch_nte?limit=-1&fields=id,doc_no,file,post_dispatch_invoice_id&filter[post_dispatch_invoice_id][_in]=${pdis.map((p: DirectusPDI) => p.id).join(",")}`;
       const nteRes = await fetch(nteUrl, { headers: fetchHeaders, cache: "no-store" });
       const nteData = (await nteRes.json()).data || [] as DirectusNTE[];
-      
+
       // Step 3e: Fetch all departments for name mapping (to avoid IDs like "8")
       const allDeptsRes = await fetch(`${DIRECTUS_URL}/items/department?limit=-1&fields=department_id,department_name`, { headers: fetchHeaders, cache: "no-store" });
       const allDepts = (await allDeptsRes.json()).data || [] as { department_id: number; department_name: string }[];
       const deptMap = new Map(allDepts.map((d: { department_id: number; department_name: string }) => [String(d.department_id), d.department_name]));
 
-      // 4. Fetch Sales Returns and Linking Table
+      // 4. Fetch Sales Returns (both via direct invoice_no and linking table)
       let returns: DirectusReturn[] = [];
       let returnLinks: DirectusReturnLink[] = [];
-      
-      if (invoiceIds.length > 0) {
-        // Fetch the linking table first: sales_invoice_sales_return
-        const linkUrl = `${DIRECTUS_URL}/items/sales_invoice_sales_return?limit=-1&filter[invoice_no][_in]=${invoiceIds.join(",")}`;
-        const linkRes = await fetch(linkUrl, { headers: fetchHeaders, cache: "no-store" });
-        returnLinks = (await linkRes.json()).data || [];
 
-        const returnIds = [...new Set(returnLinks.map((l: DirectusReturnLink) => l.return_no))];
-        if (returnIds.length > 0) {
-          const srUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=*&filter[return_id][_in]=${returnIds.join(",")}`;
-          const srRes = await fetch(srUrl, { headers: fetchHeaders, cache: "no-store" });
-          returns = (await srRes.json()).data || [];
+      const siNos = salesInvoices.map((si: DirectusSI) => si.invoice_no).filter(Boolean);
+
+      // 4a. Direct lookup from sales_return using invoice_no (regardless of isApplied)
+      if (siNos.length > 0) {
+        try {
+          const directSrUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=*&filter[invoice_no][_in]=${encodeURIComponent(siNos.join(","))}`;
+          const directSrRes = await fetch(directSrUrl, { headers: fetchHeaders, cache: "no-store" });
+          const directSrJson = await directSrRes.json();
+          returns = (directSrJson.data || []) as DirectusReturn[];
+        } catch (e) {
+          console.error("Error fetching sales returns directly by invoice_no:", e);
+        }
+      }
+
+      // 4b. Also fetch via linking table (sales_invoice_sales_return) if any additional returns exist
+      if (invoiceIds.length > 0) {
+        try {
+          const linkUrl = `${DIRECTUS_URL}/items/sales_invoice_sales_return?limit=-1&filter[invoice_no][_in]=${invoiceIds.join(",")}`;
+          const linkRes = await fetch(linkUrl, { headers: fetchHeaders, cache: "no-store" });
+          returnLinks = (await linkRes.json()).data || [];
+
+          const returnIds = [...new Set(returnLinks.map((l: DirectusReturnLink) => l.return_no))];
+          if (returnIds.length > 0) {
+            const srUrl = `${DIRECTUS_URL}/items/sales_return?limit=-1&fields=*&filter[return_id][_in]=${returnIds.join(",")}`;
+            const srRes = await fetch(srUrl, { headers: fetchHeaders, cache: "no-store" });
+            const linkedSRs = (await srRes.json()).data || [];
+            // Merge unique returns
+            linkedSRs.forEach((lsr: DirectusReturn) => {
+              if (!returns.some((r) => r.return_id === lsr.return_id)) {
+                returns.push(lsr);
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Error fetching linked sales returns:", e);
         }
       }
 
       // 5. Fetch Customer Memos for discrepancy tracking
-      const siNos = salesInvoices.map((si: DirectusSI) => si.invoice_no).filter(Boolean);
       let memos: DirectusMemo[] = [];
       if (siNos.length > 0) {
         const memoUrl = `${DIRECTUS_URL}/items/customers_memo?limit=-1&fields=customer_reference,amount,memo_number&filter[customer_reference][_in]=${siNos.join(",")}`;
@@ -599,48 +623,62 @@ export async function GET(req: NextRequest) {
       const details = pdis.map((pdi: DirectusPDI) => {
         const si = salesInvoices.find((s: DirectusSI) => s.invoice_id === pdi.invoice_id);
         const memo = memos.find((m: DirectusMemo) => String(m.customer_reference) === String(si?.invoice_no));
+
+        // Find ALL returns for this invoice (both direct by invoice_no and via linking table)
+        const matchedReturns: { no: string; amount: number }[] = [];
         
-        // Find ALL return links for this invoice
+        // 1. Direct match by invoice_no
+        if (si?.invoice_no) {
+          const directMatched = returns.filter((r: DirectusReturn) => String(r.invoice_no).toLowerCase() === String(si.invoice_no).toLowerCase());
+          directMatched.forEach((r: DirectusReturn) => {
+            matchedReturns.push({ no: r.return_number, amount: Number(r.total_amount) || 0 });
+          });
+        }
+
+        // 2. Linking table match
         const currentReturnLinks = returnLinks.filter((l: DirectusReturnLink) => Number(l.invoice_no) === Number(pdi.invoice_id));
-        const linkedReturns = currentReturnLinks.map((link: DirectusReturnLink) => {
+        currentReturnLinks.forEach((link: DirectusReturnLink) => {
           const r = returns.find((ret: DirectusReturn) => ret.return_id === link.return_no);
-          return r ? { no: r.return_number, amount: Number(r.total_amount) || 0 } : null;
-        }).filter(Boolean);
-        
+          if (r && !matchedReturns.some(mr => mr.no === r.return_number)) {
+            matchedReturns.push({ no: r.return_number, amount: Number(r.total_amount) || 0 });
+          }
+        });
+
+        const linkedReturns = matchedReturns;
         const returnTotalAmount = linkedReturns.reduce((acc, curr) => acc + (curr?.amount || 0), 0);
-        
+
         // Find concern record for this invoice
         const concern = ufData.find((uf: DirectusUnfulfilled) => Number(uf.sales_invoice_id) === Number(pdi.invoice_id));
-        
+
         // DISCREPANCY calculation (Sum of total_amount from unfulfilled_sales_transaction_details)
         let discrepancySum = 0;
         if (concern) {
           const relatedDetails = ufDetailsData.filter(d => {
             const rawId = d.unfulfilled_sales_transaction_id;
-            const uftId = (rawId && typeof rawId === 'object' && 'id' in rawId) 
-              ? (rawId as { id: number }).id 
+            const uftId = (rawId && typeof rawId === 'object' && 'id' in rawId)
+              ? (rawId as { id: number }).id
               : rawId;
             return Number(uftId) === Number(concern.id);
           });
-          
+
           discrepancySum = relatedDetails.reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0);
         }
 
         // Calculation Logic based on Status:
-        const amount = pdi.status === "Fulfilled With Returns" 
-          ? (si?.net_amount || 0) 
+        const amount = pdi.status === "Fulfilled With Returns"
+          ? (si?.net_amount || 0)
           : (si?.total_amount || 0);
-        
+
         // NEW: For "With Returns", discrepancy comes from customers_memo table
-        const finalDiscrepancy = pdi.status === "Fulfilled With Returns" 
-          ? (Number(memo?.amount) || 0) 
+        const finalDiscrepancy = pdi.status === "Fulfilled With Returns"
+          ? (Number(memo?.amount) || 0)
           : discrepancySum;
 
         const returnedAmount = pdi.status === "Not Fulfilled" ? (amount - discrepancySum) : 0;
         const statusLower = (pdi.status || "").toLowerCase();
         const rejectedAmount = statusLower.includes("concern") ? (amount - discrepancySum) : 0;
-        
-        const returnTotalAmountVal = returnTotalAmount; 
+
+        const returnTotalAmountVal = returnTotalAmount;
         const payableAmount = pdi.status === "Fulfilled With Returns" ? ((si?.net_amount || 0) - returnTotalAmountVal) : 0;
 
         // Find ALL NTE records
@@ -650,14 +688,14 @@ export async function GET(req: NextRequest) {
           id: pdi.id,
           invoiceId: pdi.invoice_id,
           receiptNo: si?.invoice_no || "N/A",
-          amount: amount, 
+          amount: amount,
           status: pdi.status,
-          warehouseRemarks: pdi.remarks || "", 
+          warehouseRemarks: pdi.remarks || "",
           discrepancyAmount: finalDiscrepancy, // Use the resolved finalDiscrepancy
           rejectedAmount: rejectedAmount,
           returnedAmount: returnedAmount,
           payableAmount: payableAmount,
-          isAudited: (pdi.isCleared === 1 || pdi.isCleared === true), 
+          isAudited: (pdi.isCleared === 1 || pdi.isCleared === true),
           isReceived: !!pdi.invoiceAt,
           concernId: concern?.id,
           memoNo: memo?.memo_number || "---", // Add memo number for UI reference
@@ -667,8 +705,8 @@ export async function GET(req: NextRequest) {
           })),
           nteNo: relatedNtes[0] ? relatedNtes[0].doc_no : "---",
           nteFileId: relatedNtes[0] ? relatedNtes[0].file : null,
-          linkedReturn: linkedReturns[0] || null, 
-          linkedReturns: linkedReturns, 
+          linkedReturn: linkedReturns[0] || null,
+          linkedReturns: linkedReturns,
           concern: concern ? {
             nte: concern.nte,
             remarks: concern.remarks,
@@ -677,24 +715,24 @@ export async function GET(req: NextRequest) {
         };
       });
 
-      return NextResponse.json({ 
+      return NextResponse.json({
         data: details,
         plan: {
           docNo: plan.doc_no,
           toa: plan.time_of_arrival,
-          driver: driverStaff?.user_id 
-            ? (driverStaff.user_id.user_fname 
-                ? `${driverStaff.user_id.user_fname} ${driverStaff.user_id.user_lname || ""}`.trim()
-                : `${driverStaff.user_id.first_name || ""} ${driverStaff.user_id.last_name || ""}`.trim() || "N/A"
-              )
+          driver: driverStaff?.user_id
+            ? (driverStaff.user_id.user_fname
+              ? `${driverStaff.user_id.user_fname} ${driverStaff.user_id.user_lname || ""}`.trim()
+              : `${driverStaff.user_id.first_name || ""} ${driverStaff.user_id.last_name || ""}`.trim() || "N/A"
+            )
             : "N/A",
-          driverDepartment: (function() {
+          driverDepartment: (function () {
             const dId = driverStaff?.user_id?.department_id?.department_id || driverStaff?.user_id?.department_id || driverStaff?.user_id?.user_department;
             return deptMap.get(String(dId)) || dId || "Operations Department";
           })(),
           helpers: helperStaff.map((h: DirectusStaff) => {
             if (!h.user_id) return null;
-            return h.user_id.user_fname 
+            return h.user_id.user_fname
               ? `${h.user_id.user_fname} ${h.user_id.user_lname || ""}`.trim()
               : `${h.user_id.first_name || ""} ${h.user_id.last_name || ""}`.trim() || null;
           }).filter(Boolean)
@@ -733,7 +771,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "batch-update-invoices") {
-      const { updates, userId } = body; 
+      const { updates, userId } = body;
       if (!updates || !Array.isArray(updates)) {
         return NextResponse.json({ error: "Updates array is required" }, { status: 400 });
       }
@@ -809,12 +847,12 @@ export async function POST(req: NextRequest) {
       // 1. Get or Create Folder "post_dispatch_nte"
       const folderName = "post_dispatch_nte";
       let folderId = null;
-      
+
       try {
         const folderSearchUrl = `${DIRECTUS_URL}/folders?filter[name][_eq]=${folderName}`;
         const folderSearchRes = await fetch(folderSearchUrl, { headers: fetchHeaders });
         const folderSearchData = await folderSearchRes.json();
-        
+
         if (folderSearchData.data && folderSearchData.data.length > 0) {
           folderId = folderSearchData.data[0].id;
         } else {
@@ -834,12 +872,12 @@ export async function POST(req: NextRequest) {
       // Step 2: Generate sequential document number: NTE-YYYY-0001
       const year = new Date().getFullYear();
       let nextNumber = 1;
-      
+
       try {
         const latestNteUrl = `${DIRECTUS_URL}/items/post_dispatch_nte?filter[doc_no][_starts_with]=NTE-${year}-&sort=-doc_no&limit=1&fields=doc_no`;
         const latestNteRes = await fetch(latestNteUrl, { headers: fetchHeaders });
         const latestNteData = await latestNteRes.json();
-        
+
         if (latestNteData.data && latestNteData.data.length > 0) {
           const lastDocNo = latestNteData.data[0].doc_no;
           const lastNumStr = lastDocNo.split("-").pop();
@@ -860,13 +898,13 @@ export async function POST(req: NextRequest) {
         const formData = new FormData();
         const buffer = Buffer.from(fileBase64, 'base64');
         const blob = new Blob([buffer], { type: 'application/pdf' });
-        
+
         formData.append('file', blob, fileName);
         if (folderId) formData.append('folder', folderId);
 
         const uploadRes = await fetch(`${DIRECTUS_URL}/files`, {
           method: "POST",
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${DIRECTUS_TOKEN}`,
             // 'Content-Type': 'multipart/form-data' is set automatically by fetch when body is FormData
           },
@@ -920,8 +958,8 @@ export async function POST(req: NextRequest) {
       // It's a new memo ONLY if we didn't find any existing record for this invoice context
       const isNewMemo = !existingData;
       const memoId = existingData?.id;
-      
-      const memoUrl = isNewMemo 
+
+      const memoUrl = isNewMemo
         ? `${DIRECTUS_URL}/items/customers_memo`
         : `${DIRECTUS_URL}/items/customers_memo/${memoId}`;
 
@@ -960,7 +998,7 @@ export async function POST(req: NextRequest) {
           const cdnFetchUrl = `${DIRECTUS_URL}/items/credit_debit_numbers?limit=1&fields=id,customer_debit_no`;
           const cdnFetchRes = await fetch(cdnFetchUrl, { headers: fetchHeaders, cache: "no-store" });
           const cdnRow = (await cdnFetchRes.json()).data?.[0];
-          
+
           if (cdnRow) {
             const newDebitNo = (Number(cdnRow.customer_debit_no) || 0) + 1;
             await fetch(`${DIRECTUS_URL}/items/credit_debit_numbers/${cdnRow.id}`, {
