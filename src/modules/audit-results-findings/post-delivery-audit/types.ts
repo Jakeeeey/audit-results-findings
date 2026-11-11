@@ -103,6 +103,21 @@ export interface SalesReturnRecord {
   invoice_no: string;
 }
 
+export interface DeliveryProof {
+  id: number;
+  post_dispatch_plan_id: number;
+  post_dispatch_invoice_id: number;
+  driver_user_id: number;
+  outcome: string;
+  remarks?: string | null;
+  recipient_name?: string | null;
+  photo_file_id: string;
+  captured_at: string;
+  received_at?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
 export interface AuditDetailRecord {
   id: number;
   status: string;
@@ -115,11 +130,15 @@ export interface AuditDetailRecord {
   discrepancyAmount?: number;
   rejectedAmount?: number;
   receiptNo: string;
+  orderNo?: string | null;
+  customerName?: string | null;
+  customerCode?: string | null;
   invoiceId: number;
   warehouseRemarks?: string;
   ntes?: { fileId: string; no: string }[];
   linkedReturns?: { no: string; amount?: number }[];
   concern?: { remarks: string };
+  deliveryProof?: DeliveryProof | null;
 }
 
 export interface AuditPlanInfo {
