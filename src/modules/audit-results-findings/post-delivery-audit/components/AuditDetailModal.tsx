@@ -30,7 +30,8 @@ import {
   ArrowRightLeft,
   PlusCircle,
   FileWarning,
-  MoreVertical
+  MoreVertical,
+  Camera
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -46,6 +47,7 @@ import {
 } from "@/components/ui/context-menu";
 import { NTEPreviewModal } from "./NTEPreviewModal";
 import { DiscrepancyMemoModal } from "./DiscrepancyMemoModal";
+import { DeliveryProofModal } from "./DeliveryProofModal";
 import { fetchProvider } from "../providers/fetchProvider";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -96,6 +98,30 @@ export function AuditDetailModal({
     data: null,
   });
   const [memoModal, setMemoModal] = useState<{ isOpen: boolean, invoiceNo: string }>({ isOpen: false, invoiceNo: "" });
+  const [proofModal, setProofModal] = useState<{
+    isOpen: boolean;
+    proof: AuditDetailRecord["deliveryProof"] | null;
+    receiptNo: string;
+    orderNo?: string | null;
+    customerName?: string | null;
+  }>({
+    isOpen: false,
+    proof: null,
+    receiptNo: "",
+    orderNo: null,
+    customerName: null,
+  });
+
+  const handleViewProof = (row: AuditDetailRecord) => {
+    if (!row.deliveryProof) return;
+    setProofModal({
+      isOpen: true,
+      proof: row.deliveryProof,
+      receiptNo: row.receiptNo,
+      orderNo: row.orderNo,
+      customerName: row.customerName,
+    });
+  };
 
   const loadUserProfile = React.useCallback(async (id: number | string) => {
     try {
@@ -402,6 +428,7 @@ export function AuditDetailModal({
                     onToggle={handleToggle} 
                     onGenerateNTE={triggerGenerateNTE} 
                     onCreateMemo={handleCreateMemo}
+                    onViewProof={handleViewProof}
                   />
                 </TabsContent>
                 <TabsContent value="not-fulfilled" className="h-full m-0 outline-none">
@@ -412,6 +439,7 @@ export function AuditDetailModal({
                     onToggle={handleToggle} 
                     onGenerateNTE={triggerGenerateNTE} 
                     onCreateMemo={handleCreateMemo}
+                    onViewProof={handleViewProof}
                   />
                 </TabsContent>
                 <TabsContent value="with-returns" className="h-full m-0 outline-none">
@@ -422,6 +450,7 @@ export function AuditDetailModal({
                     onToggle={handleToggle} 
                     onGenerateNTE={triggerGenerateNTE} 
                     onCreateMemo={handleCreateMemo}
+                    onViewProof={handleViewProof}
                   />
                 </TabsContent>
                 <TabsContent value="with-concern" className="h-full m-0 outline-none">
@@ -432,6 +461,7 @@ export function AuditDetailModal({
                     onToggle={handleToggle} 
                     onGenerateNTE={triggerGenerateNTE} 
                     onCreateMemo={handleCreateMemo}
+                    onViewProof={handleViewProof}
                   />
                 </TabsContent>
               </div>
@@ -456,6 +486,15 @@ export function AuditDetailModal({
         onSuccess={loadDetails}
       />
       )}
+
+      <DeliveryProofModal
+        isOpen={proofModal.isOpen}
+        onClose={() => setProofModal((prev) => ({ ...prev, isOpen: false, proof: null }))}
+        proof={proofModal.proof}
+        receiptNo={proofModal.receiptNo}
+        orderNo={proofModal.orderNo}
+        customerName={proofModal.customerName}
+      />
     </Dialog>
   );
 }
@@ -483,14 +522,16 @@ function DetailTable({
   formatPHP, 
   onToggle, 
   onGenerateNTE,
-  onCreateMemo
+  onCreateMemo,
+  onViewProof
 }: { 
   data: AuditDetailRecord[], 
   type: string, 
   formatPHP: (v: number) => string, 
   onToggle: (id: number, field: "isAudited" | "isReceived") => void,
   onGenerateNTE: (row: AuditDetailRecord) => void,
-  onCreateMemo: (row: AuditDetailRecord) => void
+  onCreateMemo: (row: AuditDetailRecord) => void,
+  onViewProof: (row: AuditDetailRecord) => void
 }) {
   return (
     <ScrollArea className="h-full">
@@ -534,6 +575,7 @@ function DetailTable({
 
             <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-center w-[100px] h-12">Audited</TableHead>
             <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-center w-[100px] h-12">Received</TableHead>
+            <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-center w-[90px] h-12">Proof</TableHead>
             {(type === "not-fulfilled" || type === "with-concern" || type === "with-returns") && (
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-center w-[100px] h-12">Actions</TableHead>
             )}
@@ -712,6 +754,25 @@ function DetailTable({
                           onCheckedChange={() => onToggle(row.id, "isReceived")}
                           className="w-5 h-5 rounded-md border-border data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500 transition-all hover:scale-110 active:scale-95" 
                         />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center">
+                        {row.deliveryProof?.photo_file_id ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onViewProof(row);
+                            }}
+                            className="h-8 px-2.5 rounded-lg border-border bg-background hover:bg-muted text-foreground text-[10px] font-black uppercase tracking-wider gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-primary" />
+                            Proof
+                          </Button>
+                        ) : null}
                       </div>
                     </TableCell>
                     {(type === "not-fulfilled" || type === "with-concern" || type === "with-returns") && (
